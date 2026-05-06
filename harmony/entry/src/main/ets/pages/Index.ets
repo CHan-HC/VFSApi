@@ -1,106 +1,99 @@
 import entry from 'libentry.so';
-import { oauthManager } from '../oauth/OAuthManager';
 
 @Entry
 @Component
 struct Index {
   @State logMessage: string = '';
-  
+
   build() {
     Column() {
       Text('VFS APIs Test')
         .fontSize(24)
         .fontWeight(FontWeight.Bold)
         .padding({ top: 20, bottom: 10 })
-      
+
       Divider()
-      
+
       List({ space: 10 }) {
         ListItem() {
           Button('List Files')
             .width('100%')
-            .onClick(async () => {
+            .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const at = await oauthManager.getAT();
                 const path = '/xxx/zzz';
-                this.logMessage = 'list files test\n\n' + entry.listFiles(at, path);
+                this.logMessage = 'list files test\n\n' + entry.listFiles(path);
               } catch (e) {
                 this.logMessage = `List Files Error: ${e}`;
               }
             })
         }
-        
+
         ListItem() {
           Button('Read File')
             .width('100%')
-            .onClick(async () => {
+            .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const at = await oauthManager.getAT();
                 const path = '/xxx/zzz/write_test.txt';
-                this.logMessage = 'read file test\n\n' + entry.readFile(at, path);
+                this.logMessage = 'read file test\n\n' + entry.readFile(path);
               } catch (e) {
                 this.logMessage = `Read File Error: ${e}`;
               }
             })
         }
-        
+
         ListItem() {
           Button('Upload File')
             .width('100%')
-            .onClick(async () => {
+            .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const at = await oauthManager.getAT();
                 const path = '/xxx/zzz/upload0430-1';
-                this.logMessage = 'upload file test\n\n' + entry.uploadFile(at, path);
+                this.logMessage = 'upload file test\n\n' + entry.uploadFile(path);
               } catch (e) {
                 this.logMessage = `Upload File Error: ${e}`;
               }
             })
         }
-        
+
         ListItem() {
           Button('Write File')
             .width('100%')
-            .onClick(async () => {
+            .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const at = await oauthManager.getAT();
                 const path = '/xxx/zzz/write_test.txt';
                 const content = [72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33];
-                this.logMessage = 'write file test\n\n' + entry.writeFile(at, path, content);
+                this.logMessage = 'write file test\n\n' + entry.writeFile(path, content);
               } catch (e) {
                 this.logMessage = `Write File Error: ${e}`;
               }
             })
         }
-        
+
         ListItem() {
           Button('Rm File')
             .width('100%')
-            .onClick(async () => {
+            .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const at = await oauthManager.getAT();
                 const path = '/xxx/zzz/write_test.txt';
-                this.logMessage = 'rm file test\n\n' + entry.rmFile(at, path);
+                this.logMessage = 'rm file test\n\n' + entry.rmFile(path);
               } catch (e) {
                 this.logMessage = `Rm File Error: ${e}`;
               }
             })
         }
-        
+
         ListItem() {
           Button('MkDir')
             .width('100%')
-            .onClick(async () => {
+            .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const at = await oauthManager.getAT();
                 const path = '/xxx/zzz/test_mk_dir';
-                this.logMessage = 'mkdir test\n\n' + entry.mkDir(at, path);
+                this.logMessage = 'mkdir test\n\n' + entry.mkDir(path);
               } catch (e) {
                 this.logMessage = `MkDir Error: ${e}`;
               }
@@ -110,12 +103,11 @@ struct Index {
         ListItem() {
           Button('Stat File')
             .width('100%')
-            .onClick(async () => {
+            .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const at = await oauthManager.getAT();
                 const path = '/xxx/zzz/write_test.txt';
-                this.logMessage = 'stat file test\n\n' + entry.statFile(at, path);
+                this.logMessage = 'stat file test\n\n' + entry.statFile(path);
               } catch (e) {
                 this.logMessage = `Stat File Error: ${e}`;
               }
@@ -125,16 +117,16 @@ struct Index {
       .width('100%')
       .layoutWeight(1)
       .padding({ left: 20, right: 20, top: 10, bottom: 10 })
-      
+
       Divider()
-      
+
       Column() {
         Text('Result:')
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
           .width('100%')
           .padding({ left: 20, right: 20, top: 10 })
-        
+
         Scroll() {
           Text(this.logMessage)
             .fontSize(12)

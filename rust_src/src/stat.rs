@@ -59,8 +59,8 @@ fn parse_rfc3339_time(time_str: &str) -> Option<u64> {
         .map(|dt| dt.timestamp() as u64)
 }
 
-pub async fn stat_file(at: &str, path: &str) -> VfsResult<StatFileResult> {
-    vfs_log_debug!(">>> stat_file START: path='{}', at_len={}", path, at.len());
+pub async fn stat_file(path: &str) -> VfsResult<StatFileResult> {
+    vfs_log_debug!(">>> stat_file START: path='{}'", path);
 
     let full_path = resolve_path(path).await?;
     vfs_log_debug!("Resolved local path: {:?}", full_path);
@@ -69,10 +69,10 @@ pub async fn stat_file(at: &str, path: &str) -> VfsResult<StatFileResult> {
     vfs_log_debug!("Local file meta: exists={}, is_file={}, is_dir={}, size={}, modified_time={}",
         local_meta.exists, local_meta.is_file, local_meta.is_dir, local_meta.size, local_meta.modified_time);
 
-    let cloud_meta = if !at.is_empty() {
+    let cloud_meta = if crate::atmanager::is_at_set() {
         vfs_log_debug!("Getting cloud file meta...");
         let client = HttpClient::new().await?;
-        get_cloud_meta(&client, at, path).await
+        get_cloud_meta(&client, path).await
     } else {
         FileMeta {
             exists: false,
@@ -134,6 +134,10 @@ pub async fn stat_file(at: &str, path: &str) -> VfsResult<StatFileResult> {
     }
 }
 
+fn get_at() -> String {
+    crate::atmanager::get_at().unwrap_or_default()
+}
+
 fn get_local_meta(path: &Path) -> FileMeta {
     if !path.exists() {
         return FileMeta {
@@ -174,10 +178,10 @@ fn get_local_meta(path: &Path) -> FileMeta {
     }
 }
 
-async fn get_cloud_meta(client: &HttpClient, at: &str, path: &str) -> FileMeta {
+async fn get_cloud_meta(client: &HttpClient, path: &str) -> FileMeta {
     vfs_log_debug!(">>> get_cloud_meta: path='{}'", path);
 
-    match find_file_meta(client, at, path).await {
+    match find_file_meta(client, path).await {
         Ok(meta) => {
             vfs_log_debug!("Found cloud file: size={}, is_file={}, is_dir={}, modified_time={}",
                 meta.size, meta.is_file, meta.is_dir, meta.modified_time);
@@ -196,7 +200,7 @@ async fn get_cloud_meta(client: &HttpClient, at: &str, path: &str) -> FileMeta {
     }
 }
 
-async fn find_file_meta(client: &HttpClient, at: &str, path: &str) -> VfsResult<FileMeta> {
+async fn find_file_meta(client: &HttpClient, path: &str) -> VfsResult<FileMeta> {
     vfs_log_debug!(">>> find_file_meta: path='{}'", path);
 
     let normalized_path = path.trim_start_matches('/');
@@ -221,7 +225,7 @@ async fn find_file_meta(client: &HttpClient, at: &str, path: &str) -> VfsResult<
         let mut current_parent_id = "applicationData".to_string();
 
         for part in parent_parts {
-            match find_folder_in_parent(client, at, part, &current_parent_id).await {
+            match find_folder_in_parent(client, part, &current_parent_id).await {
                 Ok(id) => {
                     vfs_log_debug!("Found folder '{}' with ID: {}", part, id);
                     current_parent_id = id;
@@ -254,6 +258,7 @@ async fn find_file_meta(client: &HttpClient, at: &str, path: &str) -> VfsResult<
     );
     vfs_log_debug!("Search URL: {}", url);
 
+    let at = get_at();
     let mut headers = std::collections::HashMap::new();
     headers.insert(
         "Authorization".to_string(),
@@ -343,7 +348,6 @@ async fn find_file_meta(client: &HttpClient, at: &str, path: &str) -> VfsResult<
 
 async fn find_folder_in_parent(
     client: &HttpClient,
-    at: &str,
     folder_name: &str,
     parent_id: &str,
 ) -> VfsResult<String> {
@@ -368,6 +372,7 @@ async fn find_folder_in_parent(
         params.join("&")
     );
 
+    let at = get_at();
     let mut headers = std::collections::HashMap::new();
     headers.insert(
         "Authorization".to_string(),

@@ -8,7 +8,11 @@ export default class EntryAbility extends UIAbility {
     const workspacePath = this.context.getApplicationContext().filesDir + '/applicationdata';
     entry.setWorkspace(workspacePath);
     oauthManager.init(this.context);
-    oauthManager.getAT();
+    oauthManager.getAT().then((at) => {
+      if (at) {
+        entry.setAt(at);
+      }
+    });
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {

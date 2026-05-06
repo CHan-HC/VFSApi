@@ -30,102 +30,94 @@ pub struct CReadFileResult {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_upload_file(at: *const c_char, path: *const c_char) -> c_int {
-    if at.is_null() || path.is_null() {
+pub extern "C" fn vfs_set_at(at: *const c_char) -> c_int {
+    if at.is_null() {
         return crate::error::ErrorCode::InvalidParameter.as_i32();
     }
-    
     let at_str = unsafe { CStr::from_ptr(at) };
     let at_string = match at_str.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
     };
-    
-    let path_str = unsafe { CStr::from_ptr(path) };
-    let path_string = match path_str.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
-    };
-    
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::upload::upload_file(&at_string, &path_string)) {
+    match crate::atmanager::set_at(&at_string) {
         Ok(_) => crate::error::ErrorCode::Success.as_i32(),
         Err(e) => e.code.as_i32(),
     }
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_write_file(at: *const c_char, path: *const c_char, content_ptr: *const u8, content_len: usize) -> c_int {
-    if at.is_null() || path.is_null() || content_ptr.is_null() {
+pub extern "C" fn vfs_upload_file(path: *const c_char) -> c_int {
+    if path.is_null() {
         return crate::error::ErrorCode::InvalidParameter.as_i32();
     }
-    
-    let at_str = unsafe { CStr::from_ptr(at) };
-    let at_string = match at_str.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
-    };
-    
+
     let path_str = unsafe { CStr::from_ptr(path) };
     let path_string = match path_str.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
     };
-    
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    match rt.block_on(crate::upload::upload_file(&path_string)) {
+        Ok(_) => crate::error::ErrorCode::Success.as_i32(),
+        Err(e) => e.code.as_i32(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn vfs_write_file(path: *const c_char, content_ptr: *const u8, content_len: usize) -> c_int {
+    if path.is_null() || content_ptr.is_null() {
+        return crate::error::ErrorCode::InvalidParameter.as_i32();
+    }
+
+    let path_str = unsafe { CStr::from_ptr(path) };
+    let path_string = match path_str.to_str() {
+        Ok(s) => s.to_string(),
+        Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
+    };
+
     let content = unsafe { std::slice::from_raw_parts(content_ptr, content_len) };
-    
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::write::write_file(&at_string, &path_string, content)) {
+    match rt.block_on(crate::write::write_file(&path_string, content)) {
         Ok(_) => crate::error::ErrorCode::Success.as_i32(),
         Err(e) => e.code.as_i32(),
     }
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_rm_file(at: *const c_char, path: *const c_char) -> c_int {
-    if at.is_null() || path.is_null() {
+pub extern "C" fn vfs_rm_file(path: *const c_char) -> c_int {
+    if path.is_null() {
         return crate::error::ErrorCode::InvalidParameter.as_i32();
     }
-    
-    let at_str = unsafe { CStr::from_ptr(at) };
-    let at_string = match at_str.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
-    };
-    
+
     let path_str = unsafe { CStr::from_ptr(path) };
     let path_string = match path_str.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
     };
-    
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::rm::rm_file(&at_string, &path_string)) {
+    match rt.block_on(crate::rm::rm_file(&path_string)) {
         Ok(success) => if success { crate::error::ErrorCode::Success.as_i32() } else { crate::error::ErrorCode::PathNotFound.as_i32() },
         Err(e) => e.code.as_i32(),
     }
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_mk_dir(at: *const c_char, path: *const c_char) -> c_int {
-    if at.is_null() || path.is_null() {
+pub extern "C" fn vfs_mk_dir(path: *const c_char) -> c_int {
+    if path.is_null() {
         return crate::error::ErrorCode::InvalidParameter.as_i32();
     }
-    
-    let at_str = unsafe { CStr::from_ptr(at) };
-    let at_string = match at_str.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
-    };
-    
+
     let path_str = unsafe { CStr::from_ptr(path) };
     let path_string = match path_str.to_str() {
         Ok(s) => s.to_string(),
         Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
     };
-    
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::mkdir::mk_dir(&at_string, &path_string)) {
+    match rt.block_on(crate::mkdir::mk_dir(&path_string)) {
         Ok(success) => if success { crate::error::ErrorCode::Success.as_i32() } else { crate::error::ErrorCode::InvalidParameter.as_i32() },
         Err(e) => e.code.as_i32(),
     }
@@ -224,8 +216,8 @@ pub extern "C" fn vfs_free_response(response: CHttpResponse) {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_list_files(at: *const c_char, path: *const c_char) -> CListFilesResult {
-    if at.is_null() || path.is_null() {
+pub extern "C" fn vfs_list_files(path: *const c_char) -> CListFilesResult {
+    if path.is_null() {
         return CListFilesResult {
             files_ptr: std::ptr::null_mut(),
             files_count: 0,
@@ -234,19 +226,7 @@ pub extern "C" fn vfs_list_files(at: *const c_char, path: *const c_char) -> CLis
             error_message_len: 0,
         };
     }
-    
-    let at_str = unsafe { CStr::from_ptr(at) };
-    let at_string = match at_str.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return CListFilesResult {
-            files_ptr: std::ptr::null_mut(),
-            files_count: 0,
-            error_code: crate::error::ErrorCode::InvalidParameter.as_i32(),
-            error_message_ptr: std::ptr::null_mut(),
-            error_message_len: 0,
-        },
-    };
-    
+
     let path_str = unsafe { CStr::from_ptr(path) };
     let path_string = match path_str.to_str() {
         Ok(s) => s.to_string(),
@@ -258,9 +238,9 @@ pub extern "C" fn vfs_list_files(at: *const c_char, path: *const c_char) -> CLis
             error_message_len: 0,
         },
     };
-    
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::list::list_files(&at_string, &path_string)) {
+    match rt.block_on(crate::list::list_files(&path_string)) {
         Ok(result) => {
             let mut c_files: Vec<CFileInfo> = Vec::new();
             
@@ -341,8 +321,8 @@ pub extern "C" fn vfs_free_list_files_result(result: CListFilesResult) {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_read_file(at: *const c_char, path: *const c_char) -> CReadFileResult {
-    if at.is_null() || path.is_null() {
+pub extern "C" fn vfs_read_file(path: *const c_char) -> CReadFileResult {
+    if path.is_null() {
         return CReadFileResult {
             content_ptr: std::ptr::null_mut(),
             content_len: 0,
@@ -351,19 +331,7 @@ pub extern "C" fn vfs_read_file(at: *const c_char, path: *const c_char) -> CRead
             error_message_len: 0,
         };
     }
-    
-    let at_str = unsafe { CStr::from_ptr(at) };
-    let at_string = match at_str.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return CReadFileResult {
-            content_ptr: std::ptr::null_mut(),
-            content_len: 0,
-            error_code: crate::error::ErrorCode::InvalidParameter.as_i32(),
-            error_message_ptr: std::ptr::null_mut(),
-            error_message_len: 0,
-        },
-    };
-    
+
     let path_str = unsafe { CStr::from_ptr(path) };
     let path_string = match path_str.to_str() {
         Ok(s) => s.to_string(),
@@ -375,9 +343,9 @@ pub extern "C" fn vfs_read_file(at: *const c_char, path: *const c_char) -> CRead
             error_message_len: 0,
         },
     };
-    
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::read::read_file(&at_string, &path_string)) {
+    match rt.block_on(crate::read::read_file(&path_string)) {
         Ok(result) => {
             let (content_ptr, content_len) = if !result.content.is_empty() {
                 let mut vec = result.content;
@@ -442,8 +410,8 @@ pub struct CStatFileResult {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_stat_file(at: *const c_char, path: *const c_char) -> CStatFileResult {
-    if at.is_null() || path.is_null() {
+pub extern "C" fn vfs_stat_file(path: *const c_char) -> CStatFileResult {
+    if path.is_null() {
         return CStatFileResult {
             size: 0,
             is_file: 0,
@@ -454,20 +422,6 @@ pub extern "C" fn vfs_stat_file(at: *const c_char, path: *const c_char) -> CStat
             error_message_len: 0,
         };
     }
-
-    let at_str = unsafe { CStr::from_ptr(at) };
-    let at_string = match at_str.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return CStatFileResult {
-            size: 0,
-            is_file: 0,
-            is_dir: 0,
-            modified_time: 0,
-            error_code: crate::error::ErrorCode::InvalidParameter.as_i32(),
-            error_message_ptr: std::ptr::null_mut(),
-            error_message_len: 0,
-        },
-    };
 
     let path_str = unsafe { CStr::from_ptr(path) };
     let path_string = match path_str.to_str() {
@@ -484,7 +438,7 @@ pub extern "C" fn vfs_stat_file(at: *const c_char, path: *const c_char) -> CStat
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::stat::stat_file(&at_string, &path_string)) {
+    match rt.block_on(crate::stat::stat_file(&path_string)) {
         Ok(result) => CStatFileResult {
             size: result.size,
             is_file: if result.is_file { 1 } else { 0 },

@@ -1,15 +1,17 @@
 export const setWorkspace: (path: string) => number;
 
-export const listFiles: (at: string, path: string) => string;
+export const setAt: (at: string) => number;
 
-export const readFile: (at: string, path: string) => string;
+export const listFiles: (path: string) => string;
 
-export const uploadFile: (at: string, path: string) => string;
+export const readFile: (path: string) => string;
 
-export const writeFile: (at: string, path: string, content: number[]) => string;
+export const uploadFile: (path: string) => string;
 
-export const rmFile: (at: string, path: string) => string;
+export const writeFile: (path: string, content: number[]) => string;
 
-export const mkDir: (at: string, path: string) => string;
+export const rmFile: (path: string) => string;
 
-export const statFile: (at: string, path: string) => string;
+export const mkDir: (path: string) => string;
+
+export const statFile: (path: string) => string;

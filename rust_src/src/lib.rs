@@ -1,3 +1,4 @@
+pub mod atmanager;
 mod error;
 mod ffi;
 mod hilog;
@@ -11,6 +12,7 @@ pub mod upload;
 pub mod workspace;
 pub mod write;
 
+pub use atmanager::{set_at, get_at};
 pub use error::{ErrorCode, VfsError, VfsResult};
 pub use list::{list_files, FileInfo, ListFilesResult};
 pub use read::{read_file, ReadFileResult};
