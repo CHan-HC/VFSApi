@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
+use crate::{vfs_log_error};
 
 #[repr(C)]
 pub struct CFileInfo {
@@ -41,7 +42,10 @@ pub extern "C" fn vfs_set_at(at: *const c_char) -> c_int {
     };
     match crate::atmanager::set_at(&at_string) {
         Ok(_) => crate::error::ErrorCode::Success.as_i32(),
-        Err(e) => e.code.as_i32(),
+        Err(e) => {
+            vfs_log_error!("vfs_set_at failed: {}", e.message);
+            e.code.as_i32()
+        }
     }
 }
 
@@ -60,7 +64,10 @@ pub extern "C" fn vfs_upload_file(path: *const c_char) -> c_int {
     let rt = tokio::runtime::Runtime::new().unwrap();
     match rt.block_on(crate::upload::upload_file(&path_string)) {
         Ok(_) => crate::error::ErrorCode::Success.as_i32(),
-        Err(e) => e.code.as_i32(),
+        Err(e) => {
+            vfs_log_error!("vfs_upload_file failed: {}", e.message);
+            e.code.as_i32()
+        }
     }
 }
 
@@ -81,7 +88,10 @@ pub extern "C" fn vfs_write_file(path: *const c_char, content_ptr: *const u8, co
     let rt = tokio::runtime::Runtime::new().unwrap();
     match rt.block_on(crate::write::write_file(&path_string, content)) {
         Ok(_) => crate::error::ErrorCode::Success.as_i32(),
-        Err(e) => e.code.as_i32(),
+        Err(e) => {
+            vfs_log_error!("vfs_write_file failed: {}", e.message);
+            e.code.as_i32()
+        }
     }
 }
 
@@ -100,7 +110,10 @@ pub extern "C" fn vfs_rm_file(path: *const c_char) -> c_int {
     let rt = tokio::runtime::Runtime::new().unwrap();
     match rt.block_on(crate::rm::rm_file(&path_string)) {
         Ok(success) => if success { crate::error::ErrorCode::Success.as_i32() } else { crate::error::ErrorCode::PathNotFound.as_i32() },
-        Err(e) => e.code.as_i32(),
+        Err(e) => {
+            vfs_log_error!("vfs_rm_file failed: {}", e.message);
+            e.code.as_i32()
+        }
     }
 }
 
@@ -119,7 +132,10 @@ pub extern "C" fn vfs_mk_dir(path: *const c_char) -> c_int {
     let rt = tokio::runtime::Runtime::new().unwrap();
     match rt.block_on(crate::mkdir::mk_dir(&path_string)) {
         Ok(success) => if success { crate::error::ErrorCode::Success.as_i32() } else { crate::error::ErrorCode::InvalidParameter.as_i32() },
-        Err(e) => e.code.as_i32(),
+        Err(e) => {
+            vfs_log_error!("vfs_mk_dir failed: {}", e.message);
+            e.code.as_i32()
+        }
     }
 }
 
@@ -138,7 +154,10 @@ pub extern "C" fn vfs_set_workspace(path: *const c_char) -> c_int {
     let rt = tokio::runtime::Runtime::new().unwrap();
     match rt.block_on(crate::workspace::set_workspace(&path_string)) {
         Ok(_) => crate::error::ErrorCode::Success.as_i32(),
-        Err(e) => e.code.as_i32(),
+        Err(e) => {
+            vfs_log_error!("vfs_set_workspace failed: {}", e.message);
+            e.code.as_i32()
+        }
     }
 }
 
@@ -193,11 +212,14 @@ pub extern "C" fn vfs_http_get(url: *const c_char) -> CHttpResponse {
                 error_code: crate::error::ErrorCode::Success.as_i32(),
             }
         }
-        Err(e) => CHttpResponse {
-            status_code: 0,
-            body_ptr: std::ptr::null_mut(),
-            body_len: 0,
-            error_code: e.code.as_i32(),
+        Err(e) => {
+            vfs_log_error!("vfs_http_get failed: {}", e.message);
+            CHttpResponse {
+                status_code: 0,
+                body_ptr: std::ptr::null_mut(),
+                body_len: 0,
+                error_code: e.code.as_i32(),
+            }
         },
     }
 }
@@ -283,12 +305,13 @@ pub extern "C" fn vfs_list_files(path: *const c_char) -> CListFilesResult {
             }
         }
         Err(e) => {
+            vfs_log_error!("vfs_list_files failed: {}", e.message);
             let msg_c = CString::new(e.message.clone()).unwrap_or_default();
             let bytes = msg_c.into_bytes_with_nul();
             let msg_ptr = bytes.as_ptr() as *mut c_char;
             let msg_len = bytes.len() - 1;
             std::mem::forget(bytes);
-            
+
             CListFilesResult {
                 files_ptr: std::ptr::null_mut(),
                 files_count: 0,
@@ -366,12 +389,13 @@ pub extern "C" fn vfs_read_file(path: *const c_char) -> CReadFileResult {
             }
         }
         Err(e) => {
+            vfs_log_error!("vfs_read_file failed: {}", e.message);
             let msg_c = CString::new(e.message.clone()).unwrap_or_default();
             let bytes = msg_c.into_bytes_with_nul();
             let msg_ptr = bytes.as_ptr() as *mut c_char;
             let msg_len = bytes.len() - 1;
             std::mem::forget(bytes);
-            
+
             CReadFileResult {
                 content_ptr: std::ptr::null_mut(),
                 content_len: 0,
@@ -449,6 +473,7 @@ pub extern "C" fn vfs_stat_file(path: *const c_char) -> CStatFileResult {
             error_message_len: 0,
         },
         Err(e) => {
+            vfs_log_error!("vfs_stat_file failed: {}", e.message);
             let msg_c = CString::new(e.message.clone()).unwrap_or_default();
             let bytes = msg_c.into_bytes_with_nul();
             let msg_ptr = bytes.as_ptr() as *mut c_char;

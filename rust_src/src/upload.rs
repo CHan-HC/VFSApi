@@ -9,7 +9,13 @@ use std::fs;
 pub async fn upload_file(path: &str) -> VfsResult<()> {
     vfs_log_debug!(">>> upload_file START: path='{}'", path);
 
-    let full_path = resolve_path(path).await?;
+    let full_path = match resolve_path(path).await {
+        Ok(p) => p,
+        Err(e) => {
+            vfs_log_error!("upload_file: resolve_path failed: {}", e.message);
+            return Err(e);
+        }
+    };
     vfs_log_debug!("Resolved local path: {:?}", full_path);
 
     if !full_path.exists() || !full_path.is_file() {
