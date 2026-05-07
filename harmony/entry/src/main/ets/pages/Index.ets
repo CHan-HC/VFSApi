@@ -1,5 +1,6 @@
 import entry from 'libentry.so';
 import { oauthManager } from '../oauth/OAuthManager';
+import { common } from '@kit.AbilityKit';
 
 @Entry
 @Component
@@ -21,6 +22,9 @@ struct Index {
             .width('100%')
             .onClick(async () => {
               this.logMessage = 'Loading...';
+              const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+              let workspacePath = context.getApplicationContext().filesDir + '/applicationdata';
+              entry.setWorkspace(workspacePath);
               let at = await oauthManager.getAT()!!;
               console.log('auth = ' + at);
               this.logMessage = at as string;
@@ -62,7 +66,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/write_test.txt';
+                const path = '/xxx/zzz/upload-0507';
                 this.logMessage = 'upload file test\n\n' + entry.uploadFile(path);
               } catch (e) {
                 this.logMessage = `Upload File Error: ${e}`;
