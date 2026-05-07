@@ -33,11 +33,11 @@ impl ReadFileResult {
 }
 
 #[derive(Debug, Clone)]
-struct FileInfo {
-    exists: bool,
-    modified_time: u64,
+pub(crate) struct FileInfo {
+    pub(crate) exists: bool,
+    pub(crate) modified_time: u64,
     #[allow(dead_code)]
-    file_id: Option<String>,
+    pub(crate) file_id: Option<String>,
 }
 
 pub async fn read_file(path: &str) -> VfsResult<ReadFileResult> {
@@ -130,7 +130,7 @@ async fn read_local_file(path: &Path) -> VfsResult<ReadFileResult> {
     Ok(ReadFileResult::success(content))
 }
 
-async fn get_cloud_file_info(client: &HttpClient, path: &str) -> FileInfo {
+pub(crate) async fn get_cloud_file_info(client: &HttpClient, path: &str) -> FileInfo {
     vfs_log_debug!(">>> get_cloud_file_info: path='{}'", path);
 
     match find_file_info(client, path).await {
@@ -258,7 +258,7 @@ async fn find_file_info(client: &HttpClient, path: &str) -> VfsResult<(String, u
     ))
 }
 
-async fn read_cloud_file_with_client(client: &HttpClient, path: &str, local_path: &Path) -> VfsResult<ReadFileResult> {
+pub(crate) async fn read_cloud_file_with_client(client: &HttpClient, path: &str, local_path: &Path) -> VfsResult<ReadFileResult> {
     vfs_log_debug!(">>> read_cloud_file_with_client START: path='{}'", path);
 
     let (file_id, _) = find_file_info(client, path).await?;

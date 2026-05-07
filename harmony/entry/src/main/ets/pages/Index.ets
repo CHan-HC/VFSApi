@@ -81,7 +81,7 @@ struct Index {
               this.logMessage = 'Loading...';
               try {
                 const path = '/xxx/zzz/write_test.txt';
-                const content = [72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33];
+                const content = [99, 87, 77, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33];
                 this.logMessage = 'write file test\n\n' + entry.writeFile(path, content);
               } catch (e) {
                 this.logMessage = `Write File Error: ${e}`;
