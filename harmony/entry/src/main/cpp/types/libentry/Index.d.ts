@@ -2,7 +2,7 @@ export const setWorkspace: (path: string) => number;
 
 export const setAt: (at: string) => number;
 
-export const listFiles: (path: string) => string;
+export const listDir: (path: string) => string;
 
 export const readFile: (path: string) => string;
 

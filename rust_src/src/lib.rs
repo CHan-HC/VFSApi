@@ -15,7 +15,7 @@ pub mod write;
 
 pub use atmanager::{set_at, get_at};
 pub use error::{ErrorCode, VfsError, VfsResult};
-pub use list::{list_files, FileInfo, ListFilesResult};
+pub use list::{list_dir, FileInfo, ListDirResult};
 pub use read::{read_file, ReadFileResult};
 pub use stat::{stat_file, StatFileResult};
 pub use workspace::{set_workspace};

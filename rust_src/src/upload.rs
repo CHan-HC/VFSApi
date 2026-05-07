@@ -5,6 +5,66 @@ use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
 
+/// Result returned after syncing a local file/dir to cloud (WS-5).
+#[derive(Debug, Clone)]
+pub(crate) struct SyncResult {
+    pub file_id: String,
+    pub sha256: String,
+}
+
+/// Sync a local file or directory to the cloud.
+/// - File → multipart upload (DK-1)
+/// - Directory → create folder (DK-7)
+/// Returns the cloud file/folder ID and SHA-256 (empty for directories).
+pub(crate) async fn sync_file_to_cloud(path: &str) -> VfsResult<SyncResult> {
+    vfs_log_debug!(">>> sync_file_to_cloud START: path='{}'", path);
+
+    let full_path = match resolve_path(path).await {
+        Ok(p) => p,
+        Err(e) => {
+            vfs_log_error!("sync_file_to_cloud: resolve_path failed: {}", e.message);
+            return Err(e);
+        }
+    };
+    vfs_log_debug!("Resolved local path: {:?}", full_path);
+
+    if !full_path.exists() {
+        return Err(VfsError::new(
+            ErrorCode::PathNotFound,
+            format!("Local path not found: {:?}", full_path),
+        ));
+    }
+
+    if full_path.is_dir() {
+        vfs_log_debug!("Path is a directory, creating cloud folder...");
+        let client = HttpClient::new().await?;
+        let folder_name = full_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+        let parent_id = get_parent_folder_id(&client, path).await?;
+        let folder_id = create_folder(&client, folder_name, &parent_id).await?;
+        vfs_log_debug!("<<< sync_file_to_cloud END: folder_id={}", folder_id);
+        Ok(SyncResult { file_id: folder_id, sha256: String::new() })
+    } else {
+        vfs_log_debug!("Path is a file, uploading...");
+        let content = fs::read(&full_path).map_err(|e| {
+            VfsError::new(ErrorCode::IoError, format!("Failed to read file: {}", e))
+        })?;
+        vfs_log_debug!("Read {} bytes from local file", content.len());
+
+        let file_name = full_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let client = HttpClient::new().await?;
+        let parent_folder_id = get_parent_folder_id(&client, path).await?;
+        let result = upload_to_cloud(&client, &file_name, &content, &parent_folder_id).await?;
+        vfs_log_debug!("<<< sync_file_to_cloud END: file_id={}, sha256={}", result.file_id, result.sha256);
+        Ok(result)
+    }
+}
+
 #[allow(dead_code)]
 pub async fn upload_file(path: &str) -> VfsResult<()> {
     vfs_log_debug!(">>> upload_file START: path='{}'", path);
@@ -205,7 +265,7 @@ async fn create_folder(client: &HttpClient, folder_name: &str, parent_id: &str) 
     Ok(result.id)
 }
 
-async fn upload_to_cloud(client: &HttpClient, file_name: &str, content: &[u8], parent_folder_id: &str) -> VfsResult<String> {
+async fn upload_to_cloud(client: &HttpClient, file_name: &str, content: &[u8], parent_folder_id: &str) -> VfsResult<SyncResult> {
     vfs_log_debug!(">>> upload_to_cloud: name='{}', size={}", file_name, content.len());
 
     let boundary = "----VFS_UPLOAD_BOUNDARY_20240430";
@@ -261,12 +321,14 @@ async fn upload_to_cloud(client: &HttpClient, file_name: &str, content: &[u8], p
     #[derive(Deserialize)]
     struct UploadResponse {
         id: String,
+        #[serde(default)]
+        sha256: String,
     }
 
     let result: UploadResponse = serde_json::from_str(&response_body).map_err(|e| {
         VfsError::new(ErrorCode::JsonError, format!("Failed to parse upload response: {}", e))
     })?;
 
-    vfs_log_debug!("<<< upload_to_cloud: success, id={}", result.id);
-    Ok(result.id)
+    vfs_log_debug!("<<< upload_to_cloud: success, id={}, sha256={}", result.id, result.sha256);
+    Ok(SyncResult { file_id: result.id, sha256: result.sha256 })
 }

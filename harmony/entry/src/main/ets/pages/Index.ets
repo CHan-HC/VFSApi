@@ -33,15 +33,15 @@ struct Index {
         }
 
         ListItem() {
-          Button('List Files')
+          Button('List Dir')
             .width('100%')
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
                 const path = '/xxx/zzz';
-                this.logMessage = 'list files test\n\n' + entry.listFiles(path);
+                this.logMessage = 'list dir test\n\n' + entry.listDir(path);
               } catch (e) {
-                this.logMessage = `List Files Error: ${e}`;
+                this.logMessage = `List Dir Error: ${e}`;
               }
             })
         }

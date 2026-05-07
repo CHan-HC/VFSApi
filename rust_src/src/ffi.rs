@@ -13,7 +13,7 @@ pub struct CFileInfo {
 }
 
 #[repr(C)]
-pub struct CListFilesResult {
+pub struct CListDirResult {
     files_ptr: *mut CFileInfo,
     files_count: usize,
     error_code: c_int,
@@ -238,9 +238,9 @@ pub extern "C" fn vfs_free_response(response: CHttpResponse) {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_list_files(path: *const c_char) -> CListFilesResult {
+pub extern "C" fn vfs_list_dir(path: *const c_char) -> CListDirResult {
     if path.is_null() {
-        return CListFilesResult {
+        return CListDirResult {
             files_ptr: std::ptr::null_mut(),
             files_count: 0,
             error_code: crate::error::ErrorCode::InvalidParameter.as_i32(),
@@ -252,7 +252,7 @@ pub extern "C" fn vfs_list_files(path: *const c_char) -> CListFilesResult {
     let path_str = unsafe { CStr::from_ptr(path) };
     let path_string = match path_str.to_str() {
         Ok(s) => s.to_string(),
-        Err(_) => return CListFilesResult {
+        Err(_) => return CListDirResult {
             files_ptr: std::ptr::null_mut(),
             files_count: 0,
             error_code: crate::error::ErrorCode::InvalidParameter.as_i32(),
@@ -262,7 +262,7 @@ pub extern "C" fn vfs_list_files(path: *const c_char) -> CListFilesResult {
     };
 
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::list::list_files(&path_string)) {
+    match rt.block_on(crate::list::list_dir(&path_string)) {
         Ok(result) => {
             let mut c_files: Vec<CFileInfo> = Vec::new();
             
@@ -296,7 +296,7 @@ pub extern "C" fn vfs_list_files(path: *const c_char) -> CListFilesResult {
                 std::ptr::null_mut()
             };
             
-            CListFilesResult {
+            CListDirResult {
                 files_ptr,
                 files_count,
                 error_code: result.error_code.as_i32(),
@@ -305,14 +305,14 @@ pub extern "C" fn vfs_list_files(path: *const c_char) -> CListFilesResult {
             }
         }
         Err(e) => {
-            vfs_log_error!("vfs_list_files failed: {}", e.message);
+            vfs_log_error!("vfs_list_dir failed: {}", e.message);
             let msg_c = CString::new(e.message.clone()).unwrap_or_default();
             let bytes = msg_c.into_bytes_with_nul();
             let msg_ptr = bytes.as_ptr() as *mut c_char;
             let msg_len = bytes.len() - 1;
             std::mem::forget(bytes);
 
-            CListFilesResult {
+            CListDirResult {
                 files_ptr: std::ptr::null_mut(),
                 files_count: 0,
                 error_code: e.code.as_i32(),
@@ -324,7 +324,7 @@ pub extern "C" fn vfs_list_files(path: *const c_char) -> CListFilesResult {
 }
 
 #[no_mangle]
-pub extern "C" fn vfs_free_list_files_result(result: CListFilesResult) {
+pub extern "C" fn vfs_free_list_dir_result(result: CListDirResult) {
     if !result.files_ptr.is_null() && result.files_count > 0 {
         unsafe {
             let files = Vec::from_raw_parts(result.files_ptr, result.files_count, result.files_count);

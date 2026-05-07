@@ -41,6 +41,21 @@ pub async fn set_workspace(path: &str) -> VfsResult<()> {
     Ok(())
 }
 
+pub(crate) fn get_workspace_sync() -> VfsResult<PathBuf> {
+    let storage = get_workspace_storage();
+    let guard = storage.lock().map_err(|_| {
+        VfsError::new(ErrorCode::Unknown, "Failed to lock workspace mutex")
+    })?;
+
+    match guard.as_ref() {
+        Some(path) => Ok(path.clone()),
+        None => Err(VfsError::new(
+            ErrorCode::WorkspaceNotSet,
+            "Workspace has not been set",
+        )),
+    }
+}
+
 pub async fn get_workspace() -> VfsResult<PathBuf> {
     let storage = get_workspace_storage();
     let guard = storage.lock().map_err(|_| {
@@ -54,6 +69,19 @@ pub async fn get_workspace() -> VfsResult<PathBuf> {
             "Workspace has not been set",
         )),
     }
+}
+
+pub(crate) fn resolve_path_sync(relative_path: &str) -> VfsResult<PathBuf> {
+    let workspace = get_workspace_sync()?;
+    let normalized_path = relative_path.trim_start_matches('/');
+    let resolved = if normalized_path.is_empty() {
+        workspace.clone()
+    } else {
+        workspace.join(normalized_path)
+    };
+    crate::hilog::log_info(&format!("resolve_path_sync: workspace={:?}, input={}, resolved={:?}",
+        workspace, relative_path, resolved));
+    Ok(resolved)
 }
 
 pub async fn resolve_path(relative_path: &str) -> VfsResult<PathBuf> {

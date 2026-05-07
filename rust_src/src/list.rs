@@ -1,6 +1,6 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
-use crate::workspace::resolve_path;
+use crate::workspace::{resolve_path, resolve_path_sync};
 use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -17,13 +17,13 @@ pub struct FileInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct ListFilesResult {
+pub struct ListDirResult {
     pub files: Vec<FileInfo>,
     pub error_code: ErrorCode,
     pub error_message: Option<String>,
 }
 
-impl ListFilesResult {
+impl ListDirResult {
     pub fn success(files: Vec<FileInfo>) -> Self {
         Self {
             files,
@@ -39,6 +39,135 @@ impl ListFilesResult {
             error_message: Some(message),
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct ManifestEntry {
+    #[serde(rename = "sha256")]
+    pub sha256: String,
+    pub size: u64,
+    #[serde(rename = "mtime")]
+    pub mtime: f64,
+    #[serde(rename = "is_dir")]
+    pub is_dir: bool,
+}
+
+/// List only local files at the given path (no cloud), returning a manifest
+/// suitable for the WS-4 file_list_response. sha256 is left empty per spec.
+#[allow(dead_code)]
+pub(crate) async fn get_local_manifest(path_str: &str) -> VfsResult<std::collections::HashMap<String, ManifestEntry>> {
+    vfs_log_debug!(">>> get_local_manifest START: path='{}'", path_str);
+
+    let full_path = resolve_path(path_str).await?;
+    vfs_log_debug!("Resolved local path: {:?}", full_path);
+
+    let mut manifest = std::collections::HashMap::new();
+
+    if !full_path.exists() || !full_path.is_dir() {
+        vfs_log_debug!("Path does not exist or is not a directory, returning empty manifest");
+        return Ok(manifest);
+    }
+
+    let entries = fs::read_dir(&full_path).map_err(|e| {
+        VfsError::new(ErrorCode::IoError, format!("Failed to read directory: {}", e))
+    })?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let name = entry.file_name().to_string_lossy().into_owned();
+
+        if name.starts_with('.') {
+            continue;
+        }
+        if name == ".sync_state" || name == ".offline_queue" {
+            continue;
+        }
+
+        let is_dir = metadata.is_dir();
+        let size = if is_dir { 0 } else { metadata.len() };
+        let mtime = metadata.modified()
+            .map(|t| t.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs_f64())
+            .unwrap_or(0.0);
+
+        vfs_log_debug!("[LOCAL_MANIFEST] name={}, is_dir={}, size={}, mtime={}", name, is_dir, size, mtime);
+
+        manifest.insert(name, ManifestEntry {
+            sha256: String::new(),
+            size,
+            mtime,
+            is_dir,
+        });
+    }
+
+    vfs_log_debug!("<<< get_local_manifest END: {} entries", manifest.len());
+    Ok(manifest)
+}
+
+/// Synchronous version of get_local_manifest, for use in callbacks (e.g. WebSocket on_message).
+pub(crate) fn get_local_manifest_sync(path_str: &str) -> VfsResult<std::collections::HashMap<String, ManifestEntry>> {
+    vfs_log_debug!(">>> get_local_manifest_sync START: path='{}'", path_str);
+
+    let full_path = resolve_path_sync(path_str)?;
+    vfs_log_debug!("Resolved local path: {:?}", full_path);
+
+    let mut manifest = std::collections::HashMap::new();
+
+    if !full_path.exists() || !full_path.is_dir() {
+        vfs_log_debug!("Path does not exist or is not a directory, returning empty manifest");
+        return Ok(manifest);
+    }
+
+    let entries = fs::read_dir(&full_path).map_err(|e| {
+        VfsError::new(ErrorCode::IoError, format!("Failed to read directory: {}", e))
+    })?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let name = entry.file_name().to_string_lossy().into_owned();
+
+        if name.starts_with('.') {
+            continue;
+        }
+        if name == ".sync_state" || name == ".offline_queue" {
+            continue;
+        }
+
+        let is_dir = metadata.is_dir();
+        let size = if is_dir { 0 } else { metadata.len() };
+        let mtime = metadata.modified()
+            .map(|t| t.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs_f64())
+            .unwrap_or(0.0);
+
+        vfs_log_debug!("[LOCAL_MANIFEST_SYNC] name={}, is_dir={}, size={}, mtime={}", name, is_dir, size, mtime);
+
+        manifest.insert(name, ManifestEntry {
+            sha256: String::new(),
+            size,
+            mtime,
+            is_dir,
+        });
+    }
+
+    vfs_log_debug!("<<< get_local_manifest_sync END: {} entries", manifest.len());
+    Ok(manifest)
 }
 
 #[derive(Deserialize)]
@@ -60,8 +189,8 @@ struct CloudFile {
     mime_type: Option<String>,
 }
 
-pub async fn list_files(path: &str) -> VfsResult<ListFilesResult> {
-    vfs_log_debug!(">>> list_files START: path='{}'", path);
+pub async fn list_dir(path: &str) -> VfsResult<ListDirResult> {
+    vfs_log_debug!(">>> list_dir START: path='{}'", path);
 
     let full_path = resolve_path(path).await?;
     vfs_log_debug!("Resolved local path: {:?}", full_path);
@@ -90,9 +219,9 @@ pub async fn list_files(path: &str) -> VfsResult<ListFilesResult> {
     };
 
     let merged_files = merge_files(local_files, cloud_files);
-    vfs_log_debug!("<<< list_files END: total {} files", merged_files.len());
+    vfs_log_debug!("<<< list_dir END: total {} files", merged_files.len());
 
-    Ok(ListFilesResult::success(merged_files))
+    Ok(ListDirResult::success(merged_files))
 }
 
 fn get_at() -> String {

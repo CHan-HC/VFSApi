@@ -32,7 +32,7 @@ extern "C" {
         int error_code;
         char* error_message_ptr;
         size_t error_message_len;
-    } CListFilesResult;
+    } CListDirResult;
 
     typedef struct {
         unsigned char* content_ptr;
@@ -42,8 +42,8 @@ extern "C" {
         size_t error_message_len;
     } CReadFileResult;
 
-    CListFilesResult vfs_list_files(const char* path);
-    void vfs_free_list_files_result(CListFilesResult result);
+    CListDirResult vfs_list_dir(const char* path);
+    void vfs_free_list_dir_result(CListDirResult result);
 
     CReadFileResult vfs_read_file(const char* path);
     void vfs_free_read_file_result(CReadFileResult result);
@@ -128,7 +128,7 @@ static std::string formatTime(unsigned long long timestamp) {
     return std::string(buf);
 }
 
-static napi_value ListFiles(napi_env env, napi_callback_info info)
+static napi_value ListDir(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
     napi_value args[1] = {nullptr};
@@ -140,7 +140,7 @@ static napi_value ListFiles(napi_env env, napi_callback_info info)
     char* path = new char[pathLen + 1];
     napi_get_value_string_utf8(env, args[0], path, pathLen + 1, &pathLen);
 
-    CListFilesResult result = vfs_list_files(path);
+    CListDirResult result = vfs_list_dir(path);
     delete[] path;
 
     std::string output;
@@ -177,7 +177,7 @@ static napi_value ListFiles(napi_env env, napi_callback_info info)
         }
     }
 
-    vfs_free_list_files_result(result);
+    vfs_free_list_dir_result(result);
 
     napi_value returnVal;
     napi_create_string_utf8(env, output.c_str(), output.length(), &returnVal);
@@ -438,7 +438,7 @@ static napi_value Init(napi_env env, napi_value exports)
     napi_property_descriptor desc[] = {
         { "setWorkspace", nullptr, SetWorkspace, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setAt", nullptr, SetAt, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "listFiles", nullptr, ListFiles, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "listDir", nullptr, ListDir, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "readFile", nullptr, ReadFile, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "uploadFile", nullptr, UploadFile, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "writeFile", nullptr, WriteFile, nullptr, nullptr, nullptr, napi_default, nullptr },
