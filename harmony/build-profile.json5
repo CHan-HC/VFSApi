@@ -1,6 +1,19 @@
 {
   "app": {
     "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "/Users/macbook/hanchuang/projects/cc/vfs-apis/vfs_apis/sign/vfs.p12",
+          "storePassword": "0000001AEA18B1C835F4001B21A5B0C7F0D968E8043773B0EB3D5B3A8A3A634FA9C2803562E175167B17",
+          "keyAlias": "debug",
+          "keyPassword": "0000001A99F5DCDB72510E0700705948DCE4AB73226284ACC230657EB8A4F0BF7B7AAB6DA94F9EEB0FC5",
+          "signAlg": "SHA256withECDSA",
+          "profile": "/Users/macbook/hanchuang/projects/cc/vfs-apis/vfs_apis/sign/mac-fuseDebug.p7b",
+          "certpath": "/Users/macbook/hanchuang/projects/cc/vfs-apis/vfs_apis/sign/mac_fuse.cer"
+        }
+      }
     ],
     "products": [
       {

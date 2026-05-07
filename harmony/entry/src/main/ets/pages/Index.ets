@@ -1,4 +1,5 @@
 import entry from 'libentry.so';
+import { oauthManager } from '../oauth/OAuthManager';
 
 @Entry
 @Component
@@ -15,6 +16,18 @@ struct Index {
       Divider()
 
       List({ space: 10 }) {
+        ListItem() {
+          Button('get at')
+            .width('100%')
+            .onClick(async () => {
+              this.logMessage = 'Loading...';
+              let at = await oauthManager.getAT()!!;
+              console.log('auth = ' + at);
+              this.logMessage = at as string;
+              entry.setAt(at as string);
+            })
+        }
+
         ListItem() {
           Button('List Files')
             .width('100%')
@@ -49,7 +62,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/upload0430-1';
+                const path = '/xxx/zzz/write_test.txt';
                 this.logMessage = 'upload file test\n\n' + entry.uploadFile(path);
               } catch (e) {
                 this.logMessage = `Upload File Error: ${e}`;
