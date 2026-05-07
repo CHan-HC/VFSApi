@@ -494,6 +494,17 @@ pub extern "C" fn vfs_stat_file(path: *const c_char) -> CStatFileResult {
 }
 
 #[no_mangle]
+pub extern "C" fn vfs_bind_server() -> c_int {
+    match crate::channel::bind_server() {
+        Ok(_) => crate::error::ErrorCode::Success.as_i32(),
+        Err(e) => {
+            vfs_log_error!("vfs_bind_server failed: {}", e);
+            crate::error::ErrorCode::NetworkError.as_i32()
+        }
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn vfs_free_stat_file_result(result: CStatFileResult) {
     if !result.error_message_ptr.is_null() && result.error_message_len > 0 {
         unsafe {

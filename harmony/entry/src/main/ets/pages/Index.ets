@@ -95,7 +95,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/write_test.txt';
+                const path = '/xxx/zzz/write_test(1).txt';
                 this.logMessage = 'rm file test\n\n' + entry.rmFile(path);
               } catch (e) {
                 this.logMessage = `Rm File Error: ${e}`;
@@ -109,7 +109,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/test_mk_dir';
+                const path = '/xxx/zzz/qqq';
                 this.logMessage = 'mkdir test\n\n' + entry.mkDir(path);
               } catch (e) {
                 this.logMessage = `MkDir Error: ${e}`;
@@ -123,10 +123,23 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/write_test.txt';
+                const path = '/xxx/zzz/qqq';
                 this.logMessage = 'stat file test\n\n' + entry.statFile(path);
               } catch (e) {
                 this.logMessage = `Stat File Error: ${e}`;
+              }
+            })
+        }
+
+        ListItem() {
+          Button('startBinding')
+            .width('100%')
+            .onClick(() => {
+              this.logMessage = 'Loading...';
+              try {
+                this.logMessage = 'startBinding test\n\n' + entry.bindServer();
+              } catch (e) {
+                this.logMessage = `startBinding Error: ${e}`;
               }
             })
         }

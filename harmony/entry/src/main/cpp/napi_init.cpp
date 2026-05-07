@@ -60,6 +60,8 @@ extern "C" {
 
     CStatFileResult vfs_stat_file(const char* path);
     void vfs_free_stat_file_result(CStatFileResult result);
+
+    int vfs_bind_server();
 }
 
 static napi_value SetWorkspace(napi_env env, napi_callback_info info)
@@ -414,6 +416,22 @@ static napi_value StatFile(napi_env env, napi_callback_info info)
     return returnVal;
 }
 
+static napi_value BindServer(napi_env env, napi_callback_info info)
+{
+    int result = vfs_bind_server();
+
+    std::string output;
+    if (result == 0) {
+        output = "WebSocket bind server successfully!";
+    } else {
+        output = "Bind server failed with error code: " + std::to_string(result);
+    }
+
+    napi_value returnVal;
+    napi_create_string_utf8(env, output.c_str(), output.length(), &returnVal);
+    return returnVal;
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
@@ -427,6 +445,7 @@ static napi_value Init(napi_env env, napi_value exports)
         { "rmFile", nullptr, RmFile, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "mkDir", nullptr, MkDir, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "statFile", nullptr, StatFile, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "bindServer", nullptr, BindServer, nullptr, nullptr, nullptr, napi_default, nullptr },
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

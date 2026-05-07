@@ -15,3 +15,5 @@ export const rmFile: (path: string) => string;
 export const mkDir: (path: string) => string;
 
 export const statFile: (path: string) => string;
+
+export const bindServer: () => string;

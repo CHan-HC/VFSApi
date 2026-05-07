@@ -1,4 +1,5 @@
 pub mod atmanager;
+pub mod channel;
 mod error;
 mod ffi;
 mod hilog;

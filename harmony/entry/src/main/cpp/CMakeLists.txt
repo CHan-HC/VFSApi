@@ -13,15 +13,18 @@ include_directories(${NATIVERENDER_ROOT_PATH}
 
 set(OHOS_SDK_ROOT "/Applications/DevEco-Studio.app/Contents/sdk/default")
 set(HMS_LIB_DIR "${OHOS_SDK_ROOT}/hms/native/sysroot/usr/lib/aarch64-linux-ohos")
+set(OHOS_LIB_DIR "${OHOS_SDK_ROOT}/openharmony/native/sysroot/usr/lib/aarch64-linux-ohos")
 
 add_library(entry SHARED napi_init.cpp)
-target_link_directories(entry PRIVATE 
+target_link_directories(entry PRIVATE
     ${HMS_LIB_DIR}
+    ${OHOS_LIB_DIR}
     ${NATIVERENDER_ROOT_PATH}/../../../libs/arm64-v8a
 )
-target_link_libraries(entry PUBLIC 
+target_link_libraries(entry PUBLIC
     libace_napi.z.so
     libhilog_ndk.z.so
     librcp_c.so
+    libnet_websocket.so
     libvfs_apis.so
 )
