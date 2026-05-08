@@ -20,9 +20,7 @@ extern "C" {
     typedef struct {
         char* name_ptr;
         size_t name_len;
-        unsigned long long modified_time;
         unsigned long long size;
-        int source;
         int is_directory;
     } CFileInfo;
 
@@ -162,14 +160,11 @@ static napi_value ListDir(napi_env env, napi_callback_info info)
                              ? std::string(file->name_ptr, file->name_len)
                              : "unknown";
 
-            std::string sourceStr = (file->source == 1) ? "Local" : "Cloud";
             std::string typeStr = (file->is_directory == 1) ? "Directory" : "File";
             std::string sizeStr = formatSize(file->size);
-            std::string timeStr = formatTime(file->modified_time);
 
             output += std::to_string(i + 1) + ". " + name + "\n";
-            output += "   Type: " + typeStr + ", Size: " + sizeStr +
-                     ", Source: " + sourceStr + ", Modified: " + timeStr + "\n";
+            output += "   Type: " + typeStr + ", Size: " + sizeStr + "\n";
         }
 
         if (result.files_count == 0) {

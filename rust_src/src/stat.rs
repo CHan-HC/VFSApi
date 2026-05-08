@@ -1,6 +1,7 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
-use crate::workspace::resolve_path;
+use crate::runtime::RuntimeError;
+use crate::workspace::{get_workspace_sync, resolve_path};
 use crate::{vfs_log_debug, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -130,6 +131,76 @@ pub async fn stat_file(path: &str) -> VfsResult<StatFileResult> {
                 ErrorCode::PathNotFound,
                 "File not found neither locally nor in cloud",
             ))
+        }
+    }
+}
+
+/// Get file metadata by absolute path, with fusion logic (local + cloud).
+/// Returns `None` if the file exists in neither location.
+pub(crate) async fn stat_file_by_absolute_path(path: &Path) -> Result<Option<crate::filesystem::FileStat>, RuntimeError> {
+    vfs_log_debug!(">>> stat_file_by_absolute_path START: path={:?}", path);
+
+    let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
+    let relative_path = path.strip_prefix(&workspace).unwrap_or(path);
+    let relative_str = relative_path.to_string_lossy();
+    vfs_log_debug!("Derived relative path: '{}'", relative_str);
+
+    let local_meta = get_local_meta(path);
+    vfs_log_debug!("Local file meta: exists={}, is_file={}, is_dir={}, size={}",
+        local_meta.exists, local_meta.is_file, local_meta.is_dir, local_meta.size);
+
+    let cloud_meta = if crate::atmanager::is_at_set() {
+        vfs_log_debug!("Getting cloud file meta...");
+        let client = HttpClient::new().await
+            .map_err(|e| RuntimeError::new(e.message))?;
+        get_cloud_meta(&client, &relative_str).await
+    } else {
+        FileMeta { exists: false, modified_time: 0, size: 0, is_file: false, is_dir: false }
+    };
+    vfs_log_debug!("Cloud file meta: exists={}, is_file={}, is_dir={}, size={}",
+        cloud_meta.exists, cloud_meta.is_file, cloud_meta.is_dir, cloud_meta.size);
+
+    match (local_meta.exists, cloud_meta.exists) {
+        (true, true) => {
+            if local_meta.modified_time >= cloud_meta.modified_time {
+                vfs_log_debug!("Local is newer, using local metadata");
+                Ok(Some(crate::filesystem::FileStat {
+                    size: local_meta.size,
+                    is_file: local_meta.is_file,
+                    is_dir: local_meta.is_dir,
+                    is_symlink: false,
+                }))
+            } else {
+                vfs_log_debug!("Cloud is newer, using cloud metadata");
+                Ok(Some(crate::filesystem::FileStat {
+                    size: cloud_meta.size,
+                    is_file: cloud_meta.is_file,
+                    is_dir: cloud_meta.is_dir,
+                    is_symlink: false,
+                }))
+            }
+        }
+        (true, false) => {
+            vfs_log_debug!("File exists locally only");
+            Ok(Some(crate::filesystem::FileStat {
+                size: local_meta.size,
+                is_file: local_meta.is_file,
+                is_dir: local_meta.is_dir,
+                is_symlink: false,
+            }))
+        }
+        (false, true) => {
+            vfs_log_debug!("File exists in cloud only");
+            Ok(Some(crate::filesystem::FileStat {
+                size: cloud_meta.size,
+                is_file: cloud_meta.is_file,
+                is_dir: cloud_meta.is_dir,
+                is_symlink: false,
+            }))
+        }
+        (false, false) => {
+            vfs_log_debug!("File not found neither locally nor in cloud");
+            Ok(None)
         }
     }
 }

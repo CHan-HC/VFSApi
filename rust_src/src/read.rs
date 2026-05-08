@@ -1,6 +1,7 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
-use crate::workspace::resolve_path;
+use crate::runtime::RuntimeError;
+use crate::workspace::{get_workspace_sync, resolve_path};
 use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -89,6 +90,62 @@ pub async fn read_file(path: &str) -> VfsResult<ReadFileResult> {
                 ErrorCode::PathNotFound,
                 "File not found neither locally nor in cloud",
             ))
+        }
+    }
+}
+
+/// Read a file by its absolute path, with full fusion logic (local + cloud).
+/// The path must already be resolved (workspace prefix included).
+/// Returns the file content as raw bytes.
+pub(crate) async fn read_file_by_absolute_path(path: &Path) -> Result<Vec<u8>, RuntimeError> {
+    vfs_log_debug!(">>> read_file_by_absolute_path START: path={:?}", path);
+
+    let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
+    let relative_path = path.strip_prefix(&workspace).unwrap_or(path);
+    let relative_str = relative_path.to_string_lossy();
+    vfs_log_debug!("Derived relative path: '{}'", relative_str);
+
+    let local_info = get_local_file_info(path);
+    vfs_log_debug!("Local file info: exists={}, modified_time={}", local_info.exists, local_info.modified_time);
+
+    let cloud_info = if crate::atmanager::is_at_set() {
+        vfs_log_debug!("Getting cloud file info...");
+        let client = HttpClient::new().await.map_err(|e| RuntimeError::new(e.message))?;
+        get_cloud_file_info(&client, &relative_str).await
+    } else {
+        FileInfo { exists: false, modified_time: 0, file_id: None }
+    };
+    vfs_log_debug!("Cloud file info: exists={}, modified_time={}", cloud_info.exists, cloud_info.modified_time);
+
+    match (local_info.exists, cloud_info.exists) {
+        (true, true) => {
+            vfs_log_debug!("File exists both locally and in cloud, comparing modification times");
+            if local_info.modified_time >= cloud_info.modified_time {
+                vfs_log_debug!("Local file is newer or equal, reading from local");
+                std::fs::read(path).map_err(RuntimeError::from)
+            } else {
+                vfs_log_debug!("Cloud file is newer, downloading from cloud");
+                let client = HttpClient::new().await.map_err(|e| RuntimeError::new(e.message))?;
+                let result = read_cloud_file_with_client(&client, &relative_str, path)
+                    .await
+                    .map_err(RuntimeError::from)?;
+                Ok(result.content)
+            }
+        }
+        (true, false) => {
+            vfs_log_debug!("File exists locally only, reading from local");
+            std::fs::read(path).map_err(RuntimeError::from)
+        }
+        (false, true) => {
+            vfs_log_debug!("File exists in cloud only, downloading from cloud");
+            let client = HttpClient::new().await.map_err(|e| RuntimeError::new(e.message))?;
+            let result = read_cloud_file_with_client(&client, &relative_str, path)
+                .await
+                .map_err(RuntimeError::from)?;
+            Ok(result.content)
+        }
+        (false, false) => {
+            Err(RuntimeError::new(format!("File not found: {:?}", path)))
         }
     }
 }

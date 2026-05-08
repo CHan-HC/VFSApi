@@ -1,14 +1,13 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
+use crate::filesystem::FileSystemAdapter;
 use crate::{vfs_log_error};
 
 #[repr(C)]
 pub struct CFileInfo {
     name_ptr: *mut c_char,
     name_len: usize,
-    modified_time: u64,
     size: u64,
-    source: c_int,
     is_directory: c_int,
 }
 
@@ -85,12 +84,22 @@ pub extern "C" fn vfs_write_file(path: *const c_char, content_ptr: *const u8, co
 
     let content = unsafe { std::slice::from_raw_parts(content_ptr, content_len) };
 
+    let absolute_path = match crate::workspace::resolve_path_sync(&path_string) {
+        Ok(p) => p,
+        Err(e) => {
+            vfs_log_error!("vfs_write_file: resolve_path failed: {}", e.message);
+            return e.code.as_i32();
+        }
+    };
+
+    let fs = crate::harmonyappfilesystem::HarmonyAppFilesystem;
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::write::write_file(&path_string, content)) {
+    match rt.block_on(fs.write_file(&absolute_path, content)) {
         Ok(_) => crate::error::ErrorCode::Success.as_i32(),
         Err(e) => {
             vfs_log_error!("vfs_write_file failed: {}", e.message);
-            e.code.as_i32()
+            crate::error::ErrorCode::PathNotFound.as_i32()
         }
     }
 }
@@ -129,12 +138,22 @@ pub extern "C" fn vfs_mk_dir(path: *const c_char) -> c_int {
         Err(_) => return crate::error::ErrorCode::InvalidParameter.as_i32(),
     };
 
+    let absolute_path = match crate::workspace::resolve_path_sync(&path_string) {
+        Ok(p) => p,
+        Err(e) => {
+            vfs_log_error!("vfs_mk_dir: resolve_path failed: {}", e.message);
+            return e.code.as_i32();
+        }
+    };
+
+    let fs = crate::harmonyappfilesystem::HarmonyAppFilesystem;
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::mkdir::mk_dir(&path_string)) {
-        Ok(success) => if success { crate::error::ErrorCode::Success.as_i32() } else { crate::error::ErrorCode::InvalidParameter.as_i32() },
+    match rt.block_on(fs.create_dir_all(&absolute_path)) {
+        Ok(()) => crate::error::ErrorCode::Success.as_i32(),
         Err(e) => {
             vfs_log_error!("vfs_mk_dir failed: {}", e.message);
-            e.code.as_i32()
+            crate::error::ErrorCode::PathNotFound.as_i32()
         }
     }
 }
@@ -261,13 +280,23 @@ pub extern "C" fn vfs_list_dir(path: *const c_char) -> CListDirResult {
         },
     };
 
+    let absolute_path = match crate::workspace::resolve_path_sync(&path_string) {
+        Ok(p) => p,
+        Err(e) => {
+            vfs_log_error!("vfs_list_dir: resolve_path failed: {}", e.message);
+            return build_list_dir_error(crate::error::ErrorCode::WorkspaceNotSet, &e.message);
+        }
+    };
+
+    let fs = crate::harmonyappfilesystem::HarmonyAppFilesystem;
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::list::list_dir(&path_string)) {
-        Ok(result) => {
+    match rt.block_on(fs.list_dir(&absolute_path)) {
+        Ok(entries) => {
             let mut c_files: Vec<CFileInfo> = Vec::new();
-            
-            for file in result.files {
-                let name_c = match CString::new(file.name) {
+
+            for entry in entries {
+                let name_c = match CString::new(entry.name) {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
@@ -275,17 +304,15 @@ pub extern "C" fn vfs_list_dir(path: *const c_char) -> CListDirResult {
                 let name_ptr = bytes.as_ptr() as *mut c_char;
                 let name_len = bytes.len() - 1;
                 std::mem::forget(bytes);
-                
+
                 c_files.push(CFileInfo {
                     name_ptr,
                     name_len,
-                    modified_time: file.modified_time,
-                    size: file.size,
-                    source: file.source as c_int,
-                    is_directory: if file.is_directory { 1 } else { 0 },
+                    size: entry.stat.size,
+                    is_directory: if entry.stat.is_dir { 1 } else { 0 },
                 });
             }
-            
+
             let files_count = c_files.len();
             let files_ptr = if files_count > 0 {
                 let mut vec = c_files;
@@ -295,31 +322,35 @@ pub extern "C" fn vfs_list_dir(path: *const c_char) -> CListDirResult {
             } else {
                 std::ptr::null_mut()
             };
-            
+
             CListDirResult {
                 files_ptr,
                 files_count,
-                error_code: result.error_code.as_i32(),
+                error_code: crate::error::ErrorCode::Success.as_i32(),
                 error_message_ptr: std::ptr::null_mut(),
                 error_message_len: 0,
             }
         }
         Err(e) => {
             vfs_log_error!("vfs_list_dir failed: {}", e.message);
-            let msg_c = CString::new(e.message.clone()).unwrap_or_default();
-            let bytes = msg_c.into_bytes_with_nul();
-            let msg_ptr = bytes.as_ptr() as *mut c_char;
-            let msg_len = bytes.len() - 1;
-            std::mem::forget(bytes);
-
-            CListDirResult {
-                files_ptr: std::ptr::null_mut(),
-                files_count: 0,
-                error_code: e.code.as_i32(),
-                error_message_ptr: msg_ptr,
-                error_message_len: msg_len,
-            }
+            build_list_dir_error(crate::error::ErrorCode::PathNotFound, &e.message)
         }
+    }
+}
+
+fn build_list_dir_error(code: crate::error::ErrorCode, message: &str) -> CListDirResult {
+    let msg_c = CString::new(message).unwrap_or_default();
+    let bytes = msg_c.into_bytes_with_nul();
+    let msg_ptr = bytes.as_ptr() as *mut c_char;
+    let msg_len = bytes.len() - 1;
+    std::mem::forget(bytes);
+
+    CListDirResult {
+        files_ptr: std::ptr::null_mut(),
+        files_count: 0,
+        error_code: code.as_i32(),
+        error_message_ptr: msg_ptr,
+        error_message_len: msg_len,
     }
 }
 
@@ -367,11 +398,21 @@ pub extern "C" fn vfs_read_file(path: *const c_char) -> CReadFileResult {
         },
     };
 
+    let absolute_path = match crate::workspace::resolve_path_sync(&path_string) {
+        Ok(p) => p,
+        Err(e) => {
+            vfs_log_error!("vfs_read_file: resolve_path failed: {}", e.message);
+            return build_read_error(crate::error::ErrorCode::WorkspaceNotSet, &e.message);
+        }
+    };
+
+    let fs = crate::harmonyappfilesystem::HarmonyAppFilesystem;
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::read::read_file(&path_string)) {
-        Ok(result) => {
-            let (content_ptr, content_len) = if !result.content.is_empty() {
-                let mut vec = result.content;
+    match rt.block_on(fs.read_file(&absolute_path)) {
+        Ok(content) => {
+            let (content_ptr, content_len) = if !content.is_empty() {
+                let mut vec = content;
                 let ptr = vec.as_mut_ptr();
                 let len = vec.len();
                 std::mem::forget(vec);
@@ -379,31 +420,35 @@ pub extern "C" fn vfs_read_file(path: *const c_char) -> CReadFileResult {
             } else {
                 (std::ptr::null_mut(), 0)
             };
-            
+
             CReadFileResult {
                 content_ptr,
                 content_len,
-                error_code: result.error_code.as_i32(),
+                error_code: crate::error::ErrorCode::Success.as_i32(),
                 error_message_ptr: std::ptr::null_mut(),
                 error_message_len: 0,
             }
         }
         Err(e) => {
             vfs_log_error!("vfs_read_file failed: {}", e.message);
-            let msg_c = CString::new(e.message.clone()).unwrap_or_default();
-            let bytes = msg_c.into_bytes_with_nul();
-            let msg_ptr = bytes.as_ptr() as *mut c_char;
-            let msg_len = bytes.len() - 1;
-            std::mem::forget(bytes);
-
-            CReadFileResult {
-                content_ptr: std::ptr::null_mut(),
-                content_len: 0,
-                error_code: e.code.as_i32(),
-                error_message_ptr: msg_ptr,
-                error_message_len: msg_len,
-            }
+            build_read_error(crate::error::ErrorCode::PathNotFound, &e.message)
         }
+    }
+}
+
+fn build_read_error(code: crate::error::ErrorCode, message: &str) -> CReadFileResult {
+    let msg_c = CString::new(message).unwrap_or_default();
+    let bytes = msg_c.into_bytes_with_nul();
+    let msg_ptr = bytes.as_ptr() as *mut c_char;
+    let msg_len = bytes.len() - 1;
+    std::mem::forget(bytes);
+
+    CReadFileResult {
+        content_ptr: std::ptr::null_mut(),
+        content_len: 0,
+        error_code: code.as_i32(),
+        error_message_ptr: msg_ptr,
+        error_message_len: msg_len,
     }
 }
 
@@ -461,35 +506,53 @@ pub extern "C" fn vfs_stat_file(path: *const c_char) -> CStatFileResult {
         },
     };
 
+    let absolute_path = match crate::workspace::resolve_path_sync(&path_string) {
+        Ok(p) => p,
+        Err(e) => {
+            vfs_log_error!("vfs_stat_file: resolve_path failed: {}", e.message);
+            return build_stat_error(crate::error::ErrorCode::WorkspaceNotSet, &e.message);
+        }
+    };
+
+    let fs = crate::harmonyappfilesystem::HarmonyAppFilesystem;
+
     let rt = tokio::runtime::Runtime::new().unwrap();
-    match rt.block_on(crate::stat::stat_file(&path_string)) {
-        Ok(result) => CStatFileResult {
-            size: result.size,
-            is_file: if result.is_file { 1 } else { 0 },
-            is_dir: if result.is_dir { 1 } else { 0 },
-            modified_time: result.modified_time,
-            error_code: result.error_code.as_i32(),
+    match rt.block_on(fs.stat(&absolute_path)) {
+        Ok(Some(stat)) => CStatFileResult {
+            size: stat.size,
+            is_file: if stat.is_file { 1 } else { 0 },
+            is_dir: if stat.is_dir { 1 } else { 0 },
+            modified_time: 0,
+            error_code: crate::error::ErrorCode::Success.as_i32(),
             error_message_ptr: std::ptr::null_mut(),
             error_message_len: 0,
         },
+        Ok(None) => {
+            let msg = format!("File not found: {:?}", absolute_path);
+            build_stat_error(crate::error::ErrorCode::PathNotFound, &msg)
+        }
         Err(e) => {
             vfs_log_error!("vfs_stat_file failed: {}", e.message);
-            let msg_c = CString::new(e.message.clone()).unwrap_or_default();
-            let bytes = msg_c.into_bytes_with_nul();
-            let msg_ptr = bytes.as_ptr() as *mut c_char;
-            let msg_len = bytes.len() - 1;
-            std::mem::forget(bytes);
-
-            CStatFileResult {
-                size: 0,
-                is_file: 0,
-                is_dir: 0,
-                modified_time: 0,
-                error_code: e.code.as_i32(),
-                error_message_ptr: msg_ptr,
-                error_message_len: msg_len,
-            }
+            build_stat_error(crate::error::ErrorCode::PathNotFound, &e.message)
         }
+    }
+}
+
+fn build_stat_error(code: crate::error::ErrorCode, message: &str) -> CStatFileResult {
+    let msg_c = CString::new(message).unwrap_or_default();
+    let bytes = msg_c.into_bytes_with_nul();
+    let msg_ptr = bytes.as_ptr() as *mut c_char;
+    let msg_len = bytes.len() - 1;
+    std::mem::forget(bytes);
+
+    CStatFileResult {
+        size: 0,
+        is_file: 0,
+        is_dir: 0,
+        modified_time: 0,
+        error_code: code.as_i32(),
+        error_message_ptr: msg_ptr,
+        error_message_len: msg_len,
     }
 }
 

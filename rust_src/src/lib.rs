@@ -1,5 +1,7 @@
 pub mod atmanager;
 pub mod channel;
+pub mod filesystem;
+pub mod harmonyappfilesystem;
 mod error;
 mod ffi;
 mod hilog;
@@ -7,6 +9,7 @@ pub mod list;
 pub mod mkdir;
 pub mod read;
 mod rcp;
+pub mod runtime;
 pub mod rm;
 pub mod stat;
 pub mod upload;

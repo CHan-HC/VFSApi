@@ -1,6 +1,7 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
-use crate::workspace::{resolve_path, resolve_path_sync};
+use crate::runtime::RuntimeError;
+use crate::workspace::{get_workspace_sync, resolve_path, resolve_path_sync};
 use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -168,6 +169,84 @@ pub(crate) fn get_local_manifest_sync(path_str: &str) -> VfsResult<std::collecti
 
     vfs_log_debug!("<<< get_local_manifest_sync END: {} entries", manifest.len());
     Ok(manifest)
+}
+
+/// List directory contents by absolute path, with fusion logic (local + cloud).
+/// Returns merged entries preferring the newest modified time when a file exists in both.
+pub(crate) async fn list_dir_by_absolute_path(path: &Path) -> Result<Vec<crate::filesystem::FileDirEntry>, RuntimeError> {
+    vfs_log_debug!(">>> list_dir_by_absolute_path START: path={:?}", path);
+
+    let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
+    let relative_path = path.strip_prefix(&workspace).unwrap_or(path);
+    let relative_str = relative_path.to_string_lossy();
+    vfs_log_debug!("Derived relative path: '{}'", relative_str);
+
+    // Local files
+    let local_files = match list_local_files(path).await {
+        Ok(files) => files,
+        Err(e) => {
+            vfs_log_warn!("Local list failed: {}, using empty", e.message);
+            vec![]
+        }
+    };
+    vfs_log_debug!("Local files: {} entries", local_files.len());
+
+    // Cloud files
+    let cloud_files = if crate::atmanager::is_at_set() {
+        match list_cloud_files(&relative_str).await {
+            Ok(files) => files,
+            Err(e) => {
+                vfs_log_warn!("Cloud list failed: {}, using empty", e.message);
+                vec![]
+            }
+        }
+    } else {
+        vec![]
+    };
+    vfs_log_debug!("Cloud files: {} entries", cloud_files.len());
+
+    // Merge: newest timestamp wins when both have the same name
+    let merged = merge_file_infos(local_files, cloud_files);
+    vfs_log_debug!("Merged: {} entries", merged.len());
+
+    let entries: Vec<crate::filesystem::FileDirEntry> = merged
+        .into_iter()
+        .map(|f| crate::filesystem::FileDirEntry {
+            name: f.name,
+            stat: crate::filesystem::FileStat {
+                size: f.size,
+                is_file: !f.is_directory,
+                is_dir: f.is_directory,
+                is_symlink: false,
+            },
+        })
+        .collect();
+
+    vfs_log_debug!("<<< list_dir_by_absolute_path END: {} entries", entries.len());
+    Ok(entries)
+}
+
+/// Merge FileInfo from local and cloud, keeping the newest by modified_time when names collide.
+fn merge_file_infos(local: Vec<FileInfo>, cloud: Vec<FileInfo>) -> Vec<FileInfo> {
+    let mut map: std::collections::HashMap<String, FileInfo> = std::collections::HashMap::new();
+    for f in local {
+        map.insert(f.name.clone(), f);
+    }
+    for f in cloud {
+        match map.get_mut(&f.name) {
+            Some(existing) => {
+                if f.modified_time > existing.modified_time {
+                    *existing = f;
+                }
+            }
+            None => {
+                map.insert(f.name.clone(), f);
+            }
+        }
+    }
+    let mut result: Vec<FileInfo> = map.into_values().collect();
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    result
 }
 
 #[derive(Deserialize)]
