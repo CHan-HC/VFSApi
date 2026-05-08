@@ -37,6 +37,7 @@ impl ReadFileResult {
 pub(crate) struct FileInfo {
     pub(crate) exists: bool,
     pub(crate) modified_time: u64,
+    pub(crate) size: u64,
     #[allow(dead_code)]
     pub(crate) file_id: Option<String>,
 }
@@ -58,20 +59,34 @@ pub async fn read_file(path: &str) -> VfsResult<ReadFileResult> {
         FileInfo {
             exists: false,
             modified_time: 0,
+            size: 0,
             file_id: None,
         }
     };
-    vfs_log_debug!("Cloud file info: exists={}, modified_time={}", cloud_info.exists, cloud_info.modified_time);
+    vfs_log_debug!("Cloud file info: exists={}, modified_time={}, size={}", cloud_info.exists, cloud_info.modified_time, cloud_info.size);
 
     match (local_info.exists, cloud_info.exists) {
         (true, true) => {
-            vfs_log_debug!("File exists both locally and in cloud, comparing modification times");
+            vfs_log_debug!("File exists both locally and in cloud, local_size={}, cloud_size={}", local_info.size, cloud_info.size);
 
-            if local_info.modified_time >= cloud_info.modified_time {
-                vfs_log_debug!("Local file is newer or equal, reading from local");
+            if local_info.size == cloud_info.size {
+                vfs_log_debug!("Same size, reading from local (faster)");
                 read_local_file(&full_path).await
+            } else if local_info.modified_time >= cloud_info.modified_time {
+                vfs_log_debug!("Local is newer, reading local + async cloud update");
+                let result = read_local_file(&full_path).await?;
+                let relative_owned = path.to_string();
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    if let Err(e) = rt.block_on(crate::upload::upload_file(&relative_owned)) {
+                        vfs_log_warn!("Background cloud sync failed: {}", e.message);
+                    } else {
+                        vfs_log_debug!("Background cloud sync succeeded");
+                    }
+                });
+                Ok(result)
             } else {
-                vfs_log_debug!("Cloud file is newer, downloading from cloud");
+                vfs_log_debug!("Cloud is newer, downloading from cloud");
                 let client = HttpClient::new().await?;
                 read_cloud_file_with_client(&client, path, &full_path).await
             }
@@ -106,25 +121,51 @@ pub(crate) async fn read_file_by_absolute_path(path: &Path) -> Result<Vec<u8>, R
     vfs_log_debug!("Derived relative path: '{}'", relative_str);
 
     let local_info = get_local_file_info(path);
-    vfs_log_debug!("Local file info: exists={}, modified_time={}", local_info.exists, local_info.modified_time);
+    vfs_log_debug!("Local file info: exists={}, modified_time={}, size={}", local_info.exists, local_info.modified_time, local_info.size);
 
     let cloud_info = if crate::atmanager::is_at_set() {
         vfs_log_debug!("Getting cloud file info...");
-        let client = HttpClient::new().await.map_err(|e| RuntimeError::new(e.message))?;
-        get_cloud_file_info(&client, &relative_str).await
+        match HttpClient::new().await {
+            Ok(client) => get_cloud_file_info(&client, &relative_str).await,
+            Err(e) => {
+                vfs_log_warn!("Cloud unavailable (HttpClient error), falling back to local: {}", e.message);
+                FileInfo { exists: false, modified_time: 0, size: 0, file_id: None }
+            }
+        }
     } else {
-        FileInfo { exists: false, modified_time: 0, file_id: None }
+        FileInfo { exists: false, modified_time: 0, size: 0, file_id: None }
     };
-    vfs_log_debug!("Cloud file info: exists={}, modified_time={}", cloud_info.exists, cloud_info.modified_time);
+    vfs_log_debug!("Cloud file info: exists={}, modified_time={}, size={}", cloud_info.exists, cloud_info.modified_time, cloud_info.size);
+
+    // If cloud query failed but local exists, fall back to local.
+    if !cloud_info.exists && crate::atmanager::is_at_set() && local_info.exists {
+        vfs_log_warn!("Cloud info unavailable, reading from local as fallback");
+        return std::fs::read(path).map_err(RuntimeError::from);
+    }
 
     match (local_info.exists, cloud_info.exists) {
         (true, true) => {
-            vfs_log_debug!("File exists both locally and in cloud, comparing modification times");
-            if local_info.modified_time >= cloud_info.modified_time {
-                vfs_log_debug!("Local file is newer or equal, reading from local");
+            vfs_log_debug!("Both exist: local_size={}, cloud_size={}, local_mtime={}, cloud_mtime={}",
+                local_info.size, cloud_info.size, local_info.modified_time, cloud_info.modified_time);
+
+            if local_info.size == cloud_info.size {
+                vfs_log_debug!("Same size, reading from local (faster)");
                 std::fs::read(path).map_err(RuntimeError::from)
+            } else if local_info.modified_time >= cloud_info.modified_time {
+                vfs_log_debug!("Size differs, local is newer → read local + async cloud update");
+                let content = std::fs::read(path).map_err(RuntimeError::from)?;
+                let relative_owned = relative_str.to_string();
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    if let Err(e) = rt.block_on(crate::upload::upload_file(&relative_owned)) {
+                        vfs_log_warn!("Background cloud sync failed: {}", e.message);
+                    } else {
+                        vfs_log_debug!("Background cloud sync succeeded for '{}'", relative_owned);
+                    }
+                });
+                Ok(content)
             } else {
-                vfs_log_debug!("Cloud file is newer, downloading from cloud");
+                vfs_log_debug!("Size differs, cloud is newer → download and overwrite local");
                 let client = HttpClient::new().await.map_err(|e| RuntimeError::new(e.message))?;
                 let result = read_cloud_file_with_client(&client, &relative_str, path)
                     .await
@@ -164,6 +205,7 @@ fn get_local_file_info(path: &Path) -> FileInfo {
                 return FileInfo {
                     exists: true,
                     modified_time: timestamp,
+                    size: metadata.len(),
                     file_id: None,
                 };
             }
@@ -172,6 +214,7 @@ fn get_local_file_info(path: &Path) -> FileInfo {
     FileInfo {
         exists: false,
         modified_time: 0,
+        size: 0,
         file_id: None,
     }
 }
@@ -191,11 +234,12 @@ pub(crate) async fn get_cloud_file_info(client: &HttpClient, path: &str) -> File
     vfs_log_debug!(">>> get_cloud_file_info: path='{}'", path);
 
     match find_file_info(client, path).await {
-        Ok((file_id, modified_time)) => {
-            vfs_log_debug!("Found cloud file: id={}, modified_time={}", file_id, modified_time);
+        Ok((file_id, modified_time, cloud_size)) => {
+            vfs_log_debug!("Found cloud file: id={}, modified_time={}, size={}", file_id, modified_time, cloud_size);
             FileInfo {
                 exists: true,
                 modified_time,
+                size: cloud_size,
                 file_id: Some(file_id),
             }
         }
@@ -204,13 +248,14 @@ pub(crate) async fn get_cloud_file_info(client: &HttpClient, path: &str) -> File
             FileInfo {
                 exists: false,
                 modified_time: 0,
+                size: 0,
                 file_id: None,
             }
         }
     }
 }
 
-async fn find_file_info(client: &HttpClient, path: &str) -> VfsResult<(String, u64)> {
+async fn find_file_info(client: &HttpClient, path: &str) -> VfsResult<(String, u64, u64)> {
     vfs_log_debug!(">>> find_file_info: path='{}'", path);
 
     let normalized_path = path.trim_start_matches('/');
@@ -289,6 +334,7 @@ async fn find_file_info(client: &HttpClient, path: &str) -> VfsResult<(String, u
         file_name: String,
         #[serde(rename = "editedTime")]
         edited_time: Option<String>,
+        size: Option<u64>,
     }
 
     let result: SearchResult = serde_json::from_str(&body).map_err(|e| {
@@ -303,8 +349,10 @@ async fn find_file_info(client: &HttpClient, path: &str) -> VfsResult<(String, u
                     chrono::DateTime::parse_from_rfc3339(&time_str).ok().map(|dt| dt.timestamp() as u64)
                 }).unwrap_or(0);
 
-                vfs_log_debug!("<<< Found file: name='{}', id='{}', modified_time={}", file.file_name, file.id, modified_time);
-                return Ok((file.id.clone(), modified_time));
+                let cloud_size = file.size.unwrap_or(0);
+
+                vfs_log_debug!("<<< Found file: name='{}', id='{}', modified_time={}, size={}", file.file_name, file.id, modified_time, cloud_size);
+                return Ok((file.id.clone(), modified_time, cloud_size));
             }
         }
     }
@@ -318,7 +366,7 @@ async fn find_file_info(client: &HttpClient, path: &str) -> VfsResult<(String, u
 pub(crate) async fn read_cloud_file_with_client(client: &HttpClient, path: &str, local_path: &Path) -> VfsResult<ReadFileResult> {
     vfs_log_debug!(">>> read_cloud_file_with_client START: path='{}'", path);
 
-    let (file_id, _) = find_file_info(client, path).await?;
+    let (file_id, _, _) = find_file_info(client, path).await?;
     vfs_log_debug!("Found file ID: {}", file_id);
 
     let url = format!(
