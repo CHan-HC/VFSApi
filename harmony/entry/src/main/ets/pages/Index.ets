@@ -23,7 +23,9 @@ struct Index {
             .onClick(async () => {
               this.logMessage = 'Loading...';
               const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              let workspacePath = context.getApplicationContext().filesDir + '/applicationdata';
+              let basePath = context.getApplicationContext().filesDir + '/taichu';
+              let workspacePath = '/usr10086/session100000';
+              entry.setBasePath(basePath);
               entry.setWorkspace(workspacePath);
               let at = await oauthManager.getAT()!!;
               console.log('auth = ' + at);

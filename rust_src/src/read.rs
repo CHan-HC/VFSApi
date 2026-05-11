@@ -1,7 +1,7 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
 use crate::runtime::RuntimeError;
-use crate::workspace::{get_workspace_sync, resolve_path};
+use crate::workspace::{get_workspace_sync, get_base_path_sync, resolve_path, build_cloud_path};
 use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -115,8 +115,10 @@ pub async fn read_file(path: &str) -> VfsResult<ReadFileResult> {
 pub(crate) async fn read_file_by_absolute_path(path: &Path) -> Result<Vec<u8>, RuntimeError> {
     vfs_log_debug!(">>> read_file_by_absolute_path START: path={:?}", path);
 
+    let base_path = get_base_path_sync().map_err(RuntimeError::from)?;
     let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
-    let relative_path = path.strip_prefix(&workspace).unwrap_or(path);
+    let full_prefix = base_path.join(&workspace);
+    let relative_path = path.strip_prefix(&full_prefix).unwrap_or(path);
     let relative_str = relative_path.to_string_lossy();
     vfs_log_debug!("Derived relative path: '{}'", relative_str);
 
@@ -258,8 +260,8 @@ pub(crate) async fn get_cloud_file_info(client: &HttpClient, path: &str) -> File
 async fn find_file_info(client: &HttpClient, path: &str) -> VfsResult<(String, u64, u64)> {
     vfs_log_debug!(">>> find_file_info: path='{}'", path);
 
-    let normalized_path = path.trim_start_matches('/');
-    let parts: Vec<&str> = normalized_path.split('/').filter(|s| !s.is_empty()).collect();
+    let cloud_path = build_cloud_path(path)?;
+    let parts: Vec<&str> = cloud_path.split('/').filter(|s| !s.is_empty()).collect();
 
     if parts.is_empty() {
         return Err(VfsError::new(

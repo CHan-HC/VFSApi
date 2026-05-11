@@ -1,7 +1,7 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
 use crate::runtime::RuntimeError;
-use crate::workspace::{get_workspace_sync, resolve_path, resolve_path_sync};
+use crate::workspace::{get_workspace_sync, get_base_path_sync, resolve_path, resolve_path_sync, build_cloud_path};
 use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -176,8 +176,10 @@ pub(crate) fn get_local_manifest_sync(path_str: &str) -> VfsResult<std::collecti
 pub(crate) async fn list_dir_by_absolute_path(path: &Path) -> Result<Vec<crate::filesystem::FileDirEntry>, RuntimeError> {
     vfs_log_debug!(">>> list_dir_by_absolute_path START: path={:?}", path);
 
+    let base_path = get_base_path_sync().map_err(RuntimeError::from)?;
     let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
-    let relative_path = path.strip_prefix(&workspace).unwrap_or(path);
+    let full_prefix = base_path.join(&workspace);
+    let relative_path = path.strip_prefix(&full_prefix).unwrap_or(path);
     let relative_str = relative_path.to_string_lossy();
     vfs_log_debug!("Derived relative path: '{}'", relative_str);
 
@@ -376,14 +378,14 @@ async fn list_cloud_files(path: &str) -> VfsResult<Vec<FileInfo>> {
 
     let client = HttpClient::new().await?;
 
-    let normalized_path = path.trim_start_matches('/');
-    vfs_log_debug!("Normalized path: '{}'", normalized_path);
+    let cloud_path = build_cloud_path(path)?;
+    vfs_log_debug!("Cloud path: '{}'", cloud_path);
 
-    let parent_folder_id = if normalized_path.is_empty() {
+    let parent_folder_id = if cloud_path.is_empty() {
         vfs_log_debug!("Root path -> using 'applicationData'");
         "applicationData".to_string()
     } else {
-        let path_parts: Vec<&str> = normalized_path.split('/').filter(|s| !s.is_empty()).collect();
+        let path_parts: Vec<&str> = cloud_path.split('/').filter(|s| !s.is_empty()).collect();
         vfs_log_debug!("Path parts: {:?}", path_parts);
 
         let mut current_parent_id = "applicationData".to_string();

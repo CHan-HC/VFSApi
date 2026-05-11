@@ -188,6 +188,26 @@ extern "C" fn set_workspace(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
     return_int32(env, code.as_i32())
 }
 
+extern "C" fn set_base_path(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
+    let (argc, args) = unsafe { get_cb_args(env, info) };
+    if argc < 1 {
+        return return_int32(env, crate::error::ErrorCode::InvalidParameter.as_i32());
+    }
+    let path = match read_napi_string(env, args[0]) {
+        Some(p) => p,
+        None => return return_int32(env, crate::error::ErrorCode::InvalidParameter.as_i32()),
+    };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let code = match rt.block_on(crate::workspace::set_base_path(&path)) {
+        Ok(_) => crate::error::ErrorCode::Success,
+        Err(e) => {
+            vfs_log_error!("set_base_path failed: {}", e.message);
+            e.code
+        }
+    };
+    return_int32(env, code.as_i32())
+}
+
 extern "C" fn set_at(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
     let (argc, args) = unsafe { get_cb_args(env, info) };
     if argc < 1 {
@@ -438,10 +458,16 @@ extern "C" fn bind_server(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
 
 extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
     vfs_log_error!("INIT_MODULE: called, env={:p}, exports={:p}", env, exports);
-    let descriptors: [NapiPropertyDescriptor; 10] = [
+    let descriptors: [NapiPropertyDescriptor; 11] = [
         NapiPropertyDescriptor {
             utf8name: b"setWorkspace\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(set_workspace),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"setBasePath\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(set_base_path),
             getter: None, setter: None, value: ptr::null_mut(),
             attributes: 0, data: ptr::null_mut(),
         },

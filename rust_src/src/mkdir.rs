@@ -1,7 +1,7 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
 use crate::runtime::RuntimeError;
-use crate::workspace::{get_workspace_sync, resolve_path};
+use crate::workspace::{get_workspace_sync, get_base_path_sync, resolve_path, build_cloud_path};
 use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -45,8 +45,10 @@ pub async fn mk_dir(path: &str) -> VfsResult<bool> {
 pub(crate) async fn create_dir_all_by_absolute_path(path: &Path) -> Result<(), RuntimeError> {
     vfs_log_debug!(">>> create_dir_all_by_absolute_path START: path={:?}", path);
 
+    let base_path = get_base_path_sync().map_err(RuntimeError::from)?;
     let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
-    let relative_path = path.strip_prefix(&workspace).unwrap_or(path);
+    let full_prefix = base_path.join(&workspace);
+    let relative_path = path.strip_prefix(&full_prefix).unwrap_or(path);
     let relative_str = relative_path.to_string_lossy();
     vfs_log_debug!("Derived relative path: '{}'", relative_str);
 
@@ -74,8 +76,8 @@ async fn ensure_cloud_dir_by_path(relative_path: &str) -> Result<(), RuntimeErro
     let client = HttpClient::new().await
         .map_err(|e| RuntimeError::new(e.message))?;
 
-    let normalized = relative_path.trim_start_matches('/');
-    let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
+    let cloud_path = build_cloud_path(relative_path)?;
+    let parts: Vec<&str> = cloud_path.split('/').filter(|s| !s.is_empty()).collect();
 
     if parts.is_empty() {
         return Ok(());
@@ -156,8 +158,8 @@ async fn ensure_cloud_dir(path: &str) -> VfsResult<bool> {
 
     let client = HttpClient::new().await?;
 
-    let normalized_path = path.trim_start_matches('/');
-    let parts: Vec<&str> = normalized_path.split('/').filter(|s| !s.is_empty()).collect();
+    let cloud_path = build_cloud_path(path)?;
+    let parts: Vec<&str> = cloud_path.split('/').filter(|s| !s.is_empty()).collect();
 
     if parts.is_empty() {
         vfs_log_debug!("Root directory, nothing to create");

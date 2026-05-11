@@ -21,4 +21,4 @@ pub use error::{ErrorCode, VfsError, VfsResult};
 pub use list::{list_dir, FileInfo, ListDirResult};
 pub use read::{read_file, ReadFileResult};
 pub use stat::{stat_file, StatFileResult};
-pub use workspace::{set_workspace};
+pub use workspace::{set_workspace, set_base_path};

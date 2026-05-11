@@ -1,7 +1,7 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
 use crate::runtime::RuntimeError;
-use crate::workspace::{get_workspace_sync, resolve_path};
+use crate::workspace::{get_workspace_sync, get_base_path_sync, resolve_path};
 use crate::{vfs_log_debug, vfs_log_error};
 use std::fs;
 use std::path::Path;
@@ -60,8 +60,10 @@ pub async fn write_file(path: &str, content: &[u8]) -> VfsResult<()> {
 pub(crate) async fn write_file_by_absolute_path(path: &Path, content: &[u8]) -> Result<(), RuntimeError> {
     vfs_log_debug!(">>> write_file_by_absolute_path START: path={:?}, content_len={}", path, content.len());
 
+    let base_path = get_base_path_sync().map_err(RuntimeError::from)?;
     let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
-    let relative_path = path.strip_prefix(&workspace).unwrap_or(path);
+    let full_prefix = base_path.join(&workspace);
+    let relative_path = path.strip_prefix(&full_prefix).unwrap_or(path);
     let relative_str = relative_path.to_string_lossy();
     vfs_log_debug!("Derived relative path: '{}'", relative_str);
 

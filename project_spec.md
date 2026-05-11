@@ -127,6 +127,13 @@ impl FilesystemAdapter for HarmonyAppFilesystem {
 }
 ```
 
+### phase 13: 本地以及云空间操作路径进行变更
+- workspace.rs中增加一个成员basePath，由外部可以setBasePath进行设置。
+- 目标：basePath是代表当前可操作应用的沙箱的基础路径，workspace是应用自己在basePath上的自定义路径，例如设置basePath='/xxx/yyy',workspace='/qqq'，则如果要读文件1.txt就是basePath + workspace实际上就是/xxx/yyy/qqq/1.txt文件
+- 在当前rs文件中，本地路径以及云空间的路径的映射策略需要修改一下，操作本地和操作云空间都改一下
+- 本地路径的修改方式：以前的策略是方法传递下来比如说/zzz/1.txt，则操作本地文件是workspace + /zzz/1.txt，现在修改为basePath + workspace + /zzz/1.txt, 其中basepath以及workspace从workspace.rs中取出，注意分隔符处理一下，别多了/，根据传递下来路径以及设置的workspace路径优化一下分隔符别出问题了
+- 云空间路径修改方式：以前的策略是方法传递下来比如说/zzz/1.txt，则操作云空间文件路径是applicationdata/zzz/1.txt，现在修改为操作云空间为applicationdata + workspace + /zzz/1.txt,其中workspace从workspace.rs中取出,注意分隔符处理一下，别多了/，注意分隔符处理一下，别多了/，根据传递下来路径以及设置的workspace路径优化一下分隔符别出问题了
+
 
 
 

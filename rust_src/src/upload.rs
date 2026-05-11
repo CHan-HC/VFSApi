@@ -1,6 +1,6 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
-use crate::workspace::resolve_path;
+use crate::workspace::{resolve_path, build_cloud_path};
 use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -113,8 +113,8 @@ fn get_at() -> String {
 async fn get_parent_folder_id(client: &HttpClient, path: &str) -> VfsResult<String> {
     vfs_log_debug!(">>> get_parent_folder_id: path='{}'", path);
 
-    let normalized_path = path.trim_start_matches('/');
-    let parts: Vec<&str> = normalized_path.split('/').filter(|s| !s.is_empty()).collect();
+    let cloud_path = build_cloud_path(path)?;
+    let parts: Vec<&str> = cloud_path.split('/').filter(|s| !s.is_empty()).collect();
 
     if parts.is_empty() {
         return Ok("applicationData".to_string());
