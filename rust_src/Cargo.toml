@@ -20,4 +20,4 @@ async-trait = "0.1"
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = false

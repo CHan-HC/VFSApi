@@ -1,4 +1,4 @@
-import entry from 'libentry.so';
+import entry from 'libvfs_apis.so';
 import { oauthManager } from '../oauth/OAuthManager';
 import { common } from '@kit.AbilityKit';
 
@@ -38,7 +38,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz';
+                const path = '/';
                 this.logMessage = 'list dir test\n\n' + entry.listDir(path);
               } catch (e) {
                 this.logMessage = `List Dir Error: ${e}`;

@@ -309,6 +309,7 @@ impl HttpClient {
         Ok(Self { session })
     }
     
+    #[allow(dead_code)]
     pub async fn get(&self, url: &str) -> VfsResult<HttpResponse> {
         log_info(&format!("{} HTTP GET: {}", TAG, url));
         self.request(url, rcp_sys::RCP_METHOD_GET.as_ptr() as *const u8, None).await
@@ -376,7 +377,7 @@ impl HttpClient {
         }
         
         unsafe {
-            (*request).method = method;
+            (*request).method = method as *const std::ffi::c_void as _;
             (*config).transferConfiguration.autoRedirect = true;
             (*config).transferConfiguration.timeout.connectMs = 30000;
             (*config).transferConfiguration.timeout.transferMs = 30000;
@@ -426,7 +427,7 @@ impl HttpClient {
             
             unsafe {
                 (*content).type_ = 0;
-                (*content).data.contentStr.buffer = data_ptr;
+                (*content).data.contentStr.buffer = data_ptr as *const std::ffi::c_void as _;
                 (*content).data.contentStr.length = data_len;
                 (*request).content = content;
             }
@@ -581,7 +582,7 @@ impl HttpClient {
         }
         
         unsafe {
-            (*request).method = method;
+            (*request).method = method as *const std::ffi::c_void as _;
             (*config).transferConfiguration.autoRedirect = true;
             (*config).transferConfiguration.timeout.connectMs = 10000;
             (*config).transferConfiguration.timeout.transferMs = 10000;
@@ -611,7 +612,7 @@ impl HttpClient {
             
             unsafe {
                 (*content).type_ = 0;
-                (*content).data.contentStr.buffer = data_ptr;
+                (*content).data.contentStr.buffer = data_ptr as *const std::ffi::c_void as _;
                 (*content).data.contentStr.length = data_len;
                 (*request).content = content;
             }
@@ -750,6 +751,7 @@ impl HttpResponse {
     }
 }
 
+#[allow(dead_code)]
 pub async fn http_get(url: &str) -> VfsResult<HttpResponse> {
     log_info(&format!("HTTP GET: {}", url));
     let client = HttpClient::new().await?;

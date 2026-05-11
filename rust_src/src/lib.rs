@@ -3,7 +3,7 @@ pub mod channel;
 pub mod filesystem;
 pub mod harmonyappfilesystem;
 mod error;
-mod ffi;
+mod napi_bridge;
 mod hilog;
 pub mod list;
 pub mod mkdir;
