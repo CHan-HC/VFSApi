@@ -19,6 +19,7 @@ pub mod rcp_sys {
     pub const RCP_METHOD_POST: &[u8] = b"POST\0";
     pub const RCP_METHOD_PUT: &[u8] = b"PUT\0";
     pub const RCP_METHOD_DELETE: &[u8] = b"DELETE\0";
+    pub const RCP_METHOD_PATCH: &[u8] = b"PATCH\0";
 
     #[repr(C)]
     #[derive(Clone, Copy, Default)]
@@ -346,7 +347,12 @@ impl HttpClient {
         }
         self.request_with_headers(url, rcp_sys::RCP_METHOD_DELETE.as_ptr() as *const u8, None, headers).await
     }
-    
+
+    pub async fn patch_with_headers(&self, url: &str, body: Option<&[u8]>, _content_type: Option<&str>, headers: std::collections::HashMap<String, String>) -> VfsResult<HttpResponse> {
+        log_info(&format!("{} HTTP PATCH with headers: {}", TAG, url));
+        self.request_with_headers(url, rcp_sys::RCP_METHOD_PATCH.as_ptr() as *const u8, body, headers).await
+    }
+
     async fn request_with_headers(
         &self,
         url: &str,

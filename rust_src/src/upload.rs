@@ -59,7 +59,7 @@ pub(crate) async fn sync_file_to_cloud(path: &str) -> VfsResult<SyncResult> {
 
         let client = HttpClient::new().await?;
         let parent_folder_id = get_parent_folder_id(&client, path).await?;
-        let result = upload_to_cloud(&client, &file_name, &content, &parent_folder_id).await?;
+        let result = upload_or_update_file(&client, &file_name, &content, &parent_folder_id).await?;
         vfs_log_debug!("<<< sync_file_to_cloud END: file_id={}, sha256={}", result.file_id, result.sha256);
         Ok(result)
     }
@@ -101,7 +101,7 @@ pub async fn upload_file(path: &str) -> VfsResult<()> {
     let parent_folder_id = get_parent_folder_id(&client, path).await?;
     vfs_log_error!("UPLOAD_FILE: parent_folder_id={}", parent_folder_id);
 
-    upload_to_cloud(&client, &file_name, &content, &parent_folder_id).await?;
+    upload_or_update_file(&client, &file_name, &content, &parent_folder_id).await?;
 
     vfs_log_debug!("<<< upload_file END: success");
     Ok(())
@@ -269,8 +269,150 @@ async fn create_folder(client: &HttpClient, folder_name: &str, parent_id: &str) 
     Ok(result.id)
 }
 
-async fn upload_to_cloud(client: &HttpClient, file_name: &str, content: &[u8], parent_folder_id: &str) -> VfsResult<SyncResult> {
-    vfs_log_debug!(">>> upload_to_cloud: name='{}', size={}", file_name, content.len());
+/// Upload or update: if a file with the same name exists under parent, update it; otherwise create new.
+async fn upload_or_update_file(client: &HttpClient, file_name: &str, content: &[u8], parent_folder_id: &str) -> VfsResult<SyncResult> {
+    vfs_log_error!("upload_or_update: name='{}', parent='{}', size={}", file_name, parent_folder_id, content.len());
+
+    // Check if file already exists in this folder
+    match find_file_id_in_folder(client, file_name, parent_folder_id).await {
+        Ok(existing_id) => {
+            vfs_log_error!("upload_or_update: file exists, updating id={}", existing_id);
+            return update_cloud_file(client, &existing_id, file_name, content).await;
+        }
+        Err(_) => {
+            vfs_log_error!("upload_or_update: file not found, creating new");
+        }
+    }
+
+    // Create new file
+    create_cloud_file(client, file_name, content, parent_folder_id).await
+}
+
+/// Search for a file by name within a specific parent folder. Returns the file ID if found.
+async fn find_file_id_in_folder(client: &HttpClient, file_name: &str, parent_id: &str) -> VfsResult<String> {
+    let mut params = Vec::new();
+    params.push("fields=*".to_string());
+    params.push("form=json".to_string());
+    params.push("containers=applicationData".to_string());
+    params.push("pageSize=100".to_string());
+    params.push(format!("queryParam=parentFolder='{}'", urlencoding::encode(parent_id)));
+
+    let url = format!("https://driveapis.cloud.huawei.com.cn/drive/v1/files?{}", params.join("&"));
+
+    let at = get_at();
+    let mut headers = std::collections::HashMap::new();
+    headers.insert("Authorization".to_string(), format!("Bearer {}", at));
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    headers.insert("Accept".to_string(), "application/json".to_string());
+
+    let response = client.get_with_headers(&url, headers).await?;
+
+    if response.status_code != 200 {
+        return Err(VfsError::new(
+            ErrorCode::NetworkError,
+            format!("Failed to search files, status: {}", response.status_code),
+        ));
+    }
+
+    let body = response.body_as_string().unwrap_or_default();
+
+    #[derive(Deserialize)]
+    struct SearchResult {
+        files: Option<Vec<FileItem>>,
+    }
+    #[derive(Deserialize)]
+    struct FileItem {
+        id: String,
+        #[serde(rename = "fileName")]
+        file_name: String,
+    }
+
+    let result: SearchResult = serde_json::from_str(&body).map_err(|e| {
+        VfsError::new(ErrorCode::JsonError, format!("Failed to parse search result: {}", e))
+    })?;
+
+    if let Some(files) = result.files {
+        for f in &files {
+            if f.file_name == file_name {
+                return Ok(f.id.clone());
+            }
+        }
+    }
+
+    Err(VfsError::new(
+        ErrorCode::PathNotFound,
+        format!("File '{}' not found in folder", file_name),
+    ))
+}
+
+/// Update an existing cloud file's content via PATCH multipart upload.
+async fn update_cloud_file(client: &HttpClient, file_id: &str, file_name: &str, content: &[u8]) -> VfsResult<SyncResult> {
+    vfs_log_debug!(">>> update_cloud_file: id={}, name='{}', size={}", file_id, file_name, content.len());
+
+    let boundary = "----VFS_UPLOAD_BOUNDARY_20240430";
+
+    let metadata = serde_json::json!({
+        "fileName": file_name
+    });
+
+    let mut multipart_body = Vec::new();
+    multipart_body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    multipart_body.extend_from_slice(b"Content-Type: application/json\r\n\r\n");
+    multipart_body.extend_from_slice(metadata.to_string().as_bytes());
+    multipart_body.extend_from_slice(b"\r\n");
+
+    multipart_body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    multipart_body.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    multipart_body.extend_from_slice(content);
+    multipart_body.extend_from_slice(b"\r\n");
+
+    multipart_body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+
+    let url = format!(
+        "https://driveapis.cloud.huawei.com.cn/upload/drive/v1/files/{}?uploadType=multipart&fields=*",
+        file_id
+    );
+
+    let at = get_at();
+    let mut headers = std::collections::HashMap::new();
+    headers.insert("Authorization".to_string(), format!("Bearer {}", at));
+    headers.insert("Content-Type".to_string(), format!("multipart/related;boundary={}", boundary));
+
+    let response = client.patch_with_headers(&url, Some(&multipart_body), None, headers).await?;
+    vfs_log_debug!("Update response status: {}", response.status_code);
+
+    if response.status_code != 200 {
+        vfs_log_error!("Update failed: status={}", response.status_code);
+        if let Some(body) = &response.body {
+            let body_str = String::from_utf8_lossy(body);
+            vfs_log_error!("Error body: {}", &body_str[..body_str.len().min(500)]);
+        }
+        return Err(VfsError::new(
+            ErrorCode::NetworkError,
+            format!("Update failed with status: {}", response.status_code),
+        ));
+    }
+
+    let response_body = response.body_as_string().unwrap_or_default();
+
+    #[derive(Deserialize)]
+    struct UpdateResponse {
+        id: String,
+        #[serde(default)]
+        sha256: String,
+    }
+
+    let result: UpdateResponse = serde_json::from_str(&response_body).map_err(|e| {
+        VfsError::new(ErrorCode::JsonError, format!("Failed to parse update response: {}", e))
+    })?;
+
+    vfs_log_debug!("<<< update_cloud_file: success, id={}, sha256={}", result.id, result.sha256);
+    Ok(SyncResult { file_id: result.id, sha256: result.sha256 })
+}
+
+/// Create a new cloud file via POST multipart upload.
+async fn create_cloud_file(client: &HttpClient, file_name: &str, content: &[u8], parent_folder_id: &str) -> VfsResult<SyncResult> {
+    vfs_log_debug!(">>> create_cloud_file: name='{}', size={}", file_name, content.len());
 
     let boundary = "----VFS_UPLOAD_BOUNDARY_20240430";
 
@@ -302,37 +444,37 @@ async fn upload_to_cloud(client: &HttpClient, file_name: &str, content: &[u8], p
     headers.insert("Authorization".to_string(), format!("Bearer {}", at));
     headers.insert("Content-Type".to_string(), format!("multipart/related;boundary={}", boundary));
 
-    vfs_log_debug!("Upload URL: {}", url);
-    vfs_log_debug!("Upload body size: {} bytes", multipart_body.len());
+    vfs_log_debug!("Create URL: {}", url);
+    vfs_log_debug!("Create body size: {} bytes", multipart_body.len());
 
     let response = client.post_with_headers(&url, Some(&multipart_body), None, headers).await?;
-    vfs_log_debug!("Upload response status: {}", response.status_code);
+    vfs_log_debug!("Create response status: {}", response.status_code);
 
     if response.status_code != 200 {
-        vfs_log_error!("Upload failed: status={}", response.status_code);
+        vfs_log_error!("Create failed: status={}", response.status_code);
         if let Some(body) = &response.body {
             let body_str = String::from_utf8_lossy(body);
             vfs_log_error!("Error body: {}", &body_str[..body_str.len().min(500)]);
         }
         return Err(VfsError::new(
             ErrorCode::NetworkError,
-            format!("Upload failed with status: {}", response.status_code),
+            format!("Create failed with status: {}", response.status_code),
         ));
     }
 
     let response_body = response.body_as_string().unwrap_or_default();
 
     #[derive(Deserialize)]
-    struct UploadResponse {
+    struct CreateResponse {
         id: String,
         #[serde(default)]
         sha256: String,
     }
 
-    let result: UploadResponse = serde_json::from_str(&response_body).map_err(|e| {
-        VfsError::new(ErrorCode::JsonError, format!("Failed to parse upload response: {}", e))
+    let result: CreateResponse = serde_json::from_str(&response_body).map_err(|e| {
+        VfsError::new(ErrorCode::JsonError, format!("Failed to parse create response: {}", e))
     })?;
 
-    vfs_log_debug!("<<< upload_to_cloud: success, id={}, sha256={}", result.id, result.sha256);
+    vfs_log_debug!("<<< create_cloud_file: success, id={}, sha256={}", result.id, result.sha256);
     Ok(SyncResult { file_id: result.id, sha256: result.sha256 })
 }
