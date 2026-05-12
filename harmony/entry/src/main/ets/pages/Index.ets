@@ -6,6 +6,7 @@ import { common } from '@kit.AbilityKit';
 @Component
 struct Index {
   @State logMessage: string = '';
+  @State cloudPath: string = '';
 
   build() {
     Column() {
@@ -13,6 +14,32 @@ struct Index {
         .fontSize(24)
         .fontWeight(FontWeight.Bold)
         .padding({ top: 20, bottom: 10 })
+
+      Divider()
+
+      Row() {
+        TextInput({ placeholder: 'cloud path, e.g. /usr10086/session100000', text: this.cloudPath })
+          .onChange((value: string) => {
+            this.cloudPath = value;
+          })
+          .layoutWeight(1)
+          .fontSize(12)
+          .height(36)
+
+        Button('Cloud Dir')
+          .fontSize(12)
+          .height(36)
+          .onClick(() => {
+            this.logMessage = 'Loading...';
+            try {
+              this.logMessage = 'cloud dir raw\n\n' + entry.listCloudRaw(this.cloudPath);
+            } catch (e) {
+              this.logMessage = `Cloud Dir Error: ${e}`;
+            }
+          })
+      }
+      .width('100%')
+      .padding({ left: 10, right: 10, top: 6, bottom: 6 })
 
       Divider()
 
@@ -54,7 +81,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/write_test.txt';
+                const path = '/0507.txt';
                 this.logMessage = 'read file test\n\n' + entry.readFile(path);
               } catch (e) {
                 this.logMessage = `Read File Error: ${e}`;
@@ -68,7 +95,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/upload-0507';
+                const path = '/0507.txt';
                 this.logMessage = 'upload file test\n\n' + entry.uploadFile(path);
               } catch (e) {
                 this.logMessage = `Upload File Error: ${e}`;
@@ -82,8 +109,8 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/write_test.txt';
-                const content = [99, 87, 77, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33];
+                const path = '/0507.txt';
+                const content = [99, 87, 77, 66, 77, 77, 77, 87, 111, 114, 108, 100, 33];
                 this.logMessage = 'write file test\n\n' + entry.writeFile(path, content);
               } catch (e) {
                 this.logMessage = `Write File Error: ${e}`;
@@ -97,7 +124,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/write_test(1).txt';
+                const path = '/0507.txt';
                 this.logMessage = 'rm file test\n\n' + entry.rmFile(path);
               } catch (e) {
                 this.logMessage = `Rm File Error: ${e}`;

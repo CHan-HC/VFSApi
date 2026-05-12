@@ -263,6 +263,25 @@ extern "C" fn list_dir(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
     }
 }
 
+extern "C" fn list_cloud_raw(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
+    let (argc, args) = unsafe { get_cb_args(env, info) };
+    if argc < 1 {
+        return return_string(env, "Error: invalid parameter");
+    }
+    let path = match read_napi_string(env, args[0]) {
+        Some(p) => p,
+        None => return return_string(env, "Error: invalid parameter"),
+    };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    match rt.block_on(crate::test::list_cloud_raw(&path)) {
+        Ok(result) => return_string(env, &result),
+        Err(e) => {
+            vfs_log_error!("list_cloud_raw failed: {}", e.message);
+            return_string(env, &format!("Error: {} - {}", e.code.as_i32(), e.message))
+        }
+    }
+}
+
 extern "C" fn read_file(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
     let (argc, args) = unsafe { get_cb_args(env, info) };
     if argc < 1 {
@@ -458,7 +477,7 @@ extern "C" fn bind_server(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
 
 extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
     vfs_log_error!("INIT_MODULE: called, env={:p}, exports={:p}", env, exports);
-    let descriptors: [NapiPropertyDescriptor; 11] = [
+    let descriptors: [NapiPropertyDescriptor; 12] = [
         NapiPropertyDescriptor {
             utf8name: b"setWorkspace\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(set_workspace),
@@ -480,6 +499,12 @@ extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
         NapiPropertyDescriptor {
             utf8name: b"listDir\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(list_dir),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"listCloudRaw\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(list_cloud_raw),
             getter: None, setter: None, value: ptr::null_mut(),
             attributes: 0, data: ptr::null_mut(),
         },

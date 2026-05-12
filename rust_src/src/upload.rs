@@ -1,6 +1,6 @@
 use crate::error::{ErrorCode, VfsError, VfsResult};
 use crate::rcp::HttpClient;
-use crate::workspace::{resolve_path, build_cloud_path};
+use crate::workspace::{resolve_path, build_cloud_path, get_workspace_sync};
 use crate::{vfs_log_debug, vfs_log_error, vfs_log_warn};
 use serde::Deserialize;
 use std::fs;
@@ -67,7 +67,8 @@ pub(crate) async fn sync_file_to_cloud(path: &str) -> VfsResult<SyncResult> {
 
 #[allow(dead_code)]
 pub async fn upload_file(path: &str) -> VfsResult<()> {
-    vfs_log_debug!(">>> upload_file START: path='{}'", path);
+    let ws = get_workspace_sync().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "NOT SET".to_string());
+    vfs_log_error!("UPLOAD_FILE: path='{}', workspace='{}'", path, ws);
 
     let full_path = match resolve_path(path).await {
         Ok(p) => p,
@@ -76,7 +77,7 @@ pub async fn upload_file(path: &str) -> VfsResult<()> {
             return Err(e);
         }
     };
-    vfs_log_debug!("Resolved local path: {:?}", full_path);
+    vfs_log_error!("UPLOAD_FILE: local_full_path={:?}", full_path);
 
     if !full_path.exists() || !full_path.is_file() {
         return Err(VfsError::new(
@@ -98,7 +99,7 @@ pub async fn upload_file(path: &str) -> VfsResult<()> {
     let client = HttpClient::new().await?;
 
     let parent_folder_id = get_parent_folder_id(&client, path).await?;
-    vfs_log_debug!("Parent folder ID: {}", parent_folder_id);
+    vfs_log_error!("UPLOAD_FILE: parent_folder_id={}", parent_folder_id);
 
     upload_to_cloud(&client, &file_name, &content, &parent_folder_id).await?;
 
@@ -111,18 +112,21 @@ fn get_at() -> String {
 }
 
 async fn get_parent_folder_id(client: &HttpClient, path: &str) -> VfsResult<String> {
-    vfs_log_debug!(">>> get_parent_folder_id: path='{}'", path);
-
     let cloud_path = build_cloud_path(path)?;
+    vfs_log_error!("GET_PARENT_FOLDER_ID: path='{}', cloud_path='{}'", path, cloud_path);
     let parts: Vec<&str> = cloud_path.split('/').filter(|s| !s.is_empty()).collect();
+    vfs_log_error!("GET_PARENT_FOLDER_ID: parts={:?}", parts);
 
     if parts.is_empty() {
+        vfs_log_error!("GET_PARENT_FOLDER_ID: parts empty, returning applicationData");
         return Ok("applicationData".to_string());
     }
 
     let parent_parts = &parts[..parts.len() - 1];
+    vfs_log_error!("GET_PARENT_FOLDER_ID: parent_parts={:?}", parent_parts);
 
     if parent_parts.is_empty() {
+        vfs_log_error!("GET_PARENT_FOLDER_ID: parent_parts empty, returning applicationData");
         return Ok("applicationData".to_string());
     }
 
