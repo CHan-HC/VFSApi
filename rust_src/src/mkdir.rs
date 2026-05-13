@@ -45,7 +45,7 @@ pub async fn mk_dir(path: &str) -> VfsResult<bool> {
 pub(crate) async fn create_dir_all_by_absolute_path(path: &Path) -> Result<(), RuntimeError> {
     vfs_log_debug!(">>> create_dir_all_by_absolute_path START: path={:?}", path);
 
-    let base_path = get_base_path_sync().map_err(RuntimeError::from)?;
+    let base_path = get_base_path_sync().map_err(RuntimeError::from).unwrap_or_default();
     let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
     let full_prefix = base_path.join(&workspace);
     let relative_path = path.strip_prefix(&full_prefix).unwrap_or(path);

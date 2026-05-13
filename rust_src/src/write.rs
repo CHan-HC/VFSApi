@@ -60,7 +60,7 @@ pub async fn write_file(path: &str, content: &[u8]) -> VfsResult<()> {
 pub(crate) async fn write_file_by_absolute_path(path: &Path, content: &[u8]) -> Result<(), RuntimeError> {
     vfs_log_debug!(">>> write_file_by_absolute_path START: path={:?}, content_len={}", path, content.len());
 
-    let base_path = get_base_path_sync().map_err(RuntimeError::from)?;
+    let base_path = get_base_path_sync().map_err(RuntimeError::from).unwrap_or_default();
     let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
     let full_prefix = base_path.join(&workspace);
     let relative_path = path.strip_prefix(&full_prefix).unwrap_or(path);

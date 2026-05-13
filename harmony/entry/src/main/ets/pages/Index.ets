@@ -50,9 +50,9 @@ struct Index {
             .onClick(async () => {
               this.logMessage = 'Loading...';
               const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-              let basePath = context.getApplicationContext().filesDir + '/taichu';
-              let workspacePath = '/usr10086/session100000';
-              entry.setBasePath(basePath);
+              let basePath = context.getApplicationContext().filesDir + '/taichu02';
+              let workspacePath = basePath + '/usr10086/session100000';
+              //entry.setBasePath(basePath);
               entry.setWorkspace(workspacePath);
               let at = await oauthManager.getAT()!!;
               console.log('auth = ' + at);
@@ -124,7 +124,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/0507.txt';
+                const path = '/0507(1).txt';
                 this.logMessage = 'rm file test\n\n' + entry.rmFile(path);
               } catch (e) {
                 this.logMessage = `Rm File Error: ${e}`;
@@ -152,7 +152,7 @@ struct Index {
             .onClick(() => {
               this.logMessage = 'Loading...';
               try {
-                const path = '/xxx/zzz/qqq';
+                const path = '/0507.txt';
                 this.logMessage = 'stat file test\n\n' + entry.statFile(path);
               } catch (e) {
                 this.logMessage = `Stat File Error: ${e}`;

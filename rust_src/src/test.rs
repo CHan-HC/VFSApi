@@ -90,7 +90,6 @@ pub async fn list_cloud_raw(path: &str) -> VfsResult<String> {
         mime_type: Option<String>,
         size: Option<u64>,
         id: Option<String>,
-        #[allow(dead_code)]
         #[serde(rename = "parentFolder")]
         parent_folder: Option<Vec<String>>,
         #[allow(dead_code)]
@@ -102,13 +101,24 @@ pub async fn list_cloud_raw(path: &str) -> VfsResult<String> {
         VfsError::new(ErrorCode::JsonError, format!("Failed to parse cloud response: {}", e))
     })?;
 
-    let cloud_files = cloud_list.files.unwrap_or_default();
+    let all_files = cloud_list.files.unwrap_or_default();
+
+    // Client-side filter: only keep files whose parentFolder matches parent_folder_id.
+    // The Huawei Drive API may not filter correctly when parentFolder='applicationData'.
+    let cloud_files: Vec<&CloudFile> = all_files
+        .iter()
+        .filter(|f| {
+            f.parent_folder.as_ref().map_or(false, |parents| {
+                parents.iter().any(|p| p == &parent_folder_id)
+            })
+        })
+        .collect();
 
     if cloud_files.is_empty() {
         return Ok(format!("Cloud path '{}' is empty (no files found)", path));
     }
 
-    let mut output = format!("Cloud path '{}': {} files\n", path, cloud_files.len());
+    let mut output = format!("Cloud path '{}' (parent={}): {} files\n", path, parent_folder_id, cloud_files.len());
     for f in &cloud_files {
         let is_dir = f.mime_type.as_ref()
             .map(|mt| mt.contains("folder"))

@@ -121,9 +121,13 @@ fn join_workspace(base: &Path, workspace: &Path, relative: &str) -> PathBuf {
     }
 }
 
+fn get_base_path_sync_or_empty() -> PathBuf {
+    get_base_path_sync().unwrap_or_default()
+}
+
 pub(crate) fn resolve_path_sync(relative_path: &str) -> VfsResult<PathBuf> {
     let workspace = get_workspace_sync()?;
-    let base_path = get_base_path_sync()?;
+    let base_path = get_base_path_sync_or_empty();
     let normalized = relative_path.trim_start_matches('/');
     let resolved = join_workspace(&base_path, &workspace, normalized);
     crate::hilog::log_info(&format!(
@@ -135,7 +139,7 @@ pub(crate) fn resolve_path_sync(relative_path: &str) -> VfsResult<PathBuf> {
 
 pub async fn resolve_path(relative_path: &str) -> VfsResult<PathBuf> {
     let workspace = get_workspace().await?;
-    let base_path = get_base_path_sync()?;
+    let base_path = get_base_path_sync_or_empty();
     let normalized = relative_path.trim_start_matches('/');
     let resolved = join_workspace(&base_path, &workspace, normalized);
     crate::hilog::log_info(&format!(
@@ -145,26 +149,19 @@ pub async fn resolve_path(relative_path: &str) -> VfsResult<PathBuf> {
     Ok(resolved)
 }
 
-/// Build a cloud-relative path by prepending the workspace to the user-provided path.
+/// Build a cloud-relative path from the user-provided path.
 ///
-/// Example: workspace="/qqq", path="/zzz/1.txt" → "qqq/zzz/1.txt"
-/// If workspace is not set, returns the path as-is (stripped of leading slash).
+/// Phase 14: workspace isolation removed — cloud path is just the input path
+/// placed directly under applicationData without any workspace prefix.
+///
+/// Example: path="/zzz/1.txt" → "zzz/1.txt"
 pub(crate) fn build_cloud_path(relative_path: &str) -> VfsResult<String> {
-    let workspace = get_workspace_sync()?;
-    let ws = workspace.to_string_lossy();
-    let ws = ws.trim_matches('/');
     let rp = relative_path.trim_matches('/');
-    let full = match (ws.is_empty(), rp.is_empty()) {
-        (true, true) => String::new(),
-        (true, false) => rp.to_string(),
-        (false, true) => ws.to_string(),
-        (false, false) => format!("{}/{}", ws, rp),
-    };
     crate::hilog::log_info(&format!(
-        "build_cloud_path: workspace={}, input={}, result={}",
-        ws, relative_path, full
+        "build_cloud_path: input={}, result={}",
+        relative_path, rp
     ));
-    Ok(full)
+    Ok(rp.to_string())
 }
 
 pub async fn clear_workspace() -> VfsResult<()> {
