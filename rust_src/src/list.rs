@@ -254,6 +254,8 @@ fn merge_file_infos(local: Vec<FileInfo>, cloud: Vec<FileInfo>) -> Vec<FileInfo>
 #[derive(Deserialize)]
 struct CloudFileList {
     files: Option<Vec<CloudFile>>,
+    #[serde(rename = "nextCursor")]
+    next_cursor: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -416,50 +418,70 @@ async fn list_cloud_files(path: &str) -> VfsResult<Vec<FileInfo>> {
     params.push("pageSize=100".to_string());
     params.push(format!("queryParam=parentFolder='{}'", urlencoding::encode(&parent_folder_id)));
 
-    let url = format!("https://driveapis.cloud.huawei.com.cn/drive/v1/files?{}", params.join("&"));
-    vfs_log_debug!("Query URL: {}", url);
+    let base_url = format!("https://driveapis.cloud.huawei.com.cn/drive/v1/files?{}", params.join("&"));
+    vfs_log_debug!("Base query URL: {}", base_url);
 
     let mut headers = std::collections::HashMap::new();
     headers.insert("Authorization".to_string(), format!("Bearer {}", at));
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     headers.insert("Accept".to_string(), "application/json".to_string());
 
-    vfs_log_debug!("Sending HTTP request...");
-    let response = client.get_with_headers(&url, headers).await?;
-    vfs_log_debug!("Response status: {}", response.status_code);
+    let mut all_files: Vec<CloudFile> = Vec::new();
+    let mut cursor: Option<String> = None;
 
-    if response.status_code != 200 {
-        vfs_log_error!("API error: status={}", response.status_code);
-        if let Some(body) = &response.body {
-            let body_str = String::from_utf8_lossy(body);
-            vfs_log_error!("Error body: {}", &body_str[..body_str.len().min(500)]);
+    loop {
+        let url = if let Some(ref c) = cursor {
+            format!("{}&cursor={}", base_url, urlencoding::encode(c))
+        } else {
+            base_url.clone()
+        };
+        vfs_log_debug!("Request URL: {}", url);
+
+        let response = client.get_with_headers(&url, headers.clone()).await?;
+        vfs_log_debug!("Response status: {}", response.status_code);
+
+        if response.status_code != 200 {
+            vfs_log_error!("API error: status={}", response.status_code);
+            if let Some(body) = &response.body {
+                let body_str = String::from_utf8_lossy(body);
+                vfs_log_error!("Error body: {}", &body_str[..body_str.len().min(500)]);
+            }
+            return Err(VfsError::new(
+                ErrorCode::NetworkError,
+                format!("Cloud API returned status: {}", response.status_code),
+            ));
         }
-        return Err(VfsError::new(
-            ErrorCode::NetworkError,
-            format!("Cloud API returned status: {}", response.status_code),
-        ));
+
+        let body = response.body_as_string().unwrap_or_default();
+        vfs_log_debug!("Response body length: {}", body.len());
+
+        let cloud_list: CloudFileList = serde_json::from_str(&body).map_err(|e| {
+            vfs_log_error!("JSON parse failed: {}", e);
+            VfsError::new(ErrorCode::InvalidParameter, format!("Failed to parse cloud response: {}", e))
+        })?;
+
+        let page_files = cloud_list.files.unwrap_or_default();
+        vfs_log_debug!("Page returned {} files, next_cursor={:?}", page_files.len(), cloud_list.next_cursor);
+
+        for (i, f) in page_files.iter().enumerate() {
+            let id_str = f.id.as_deref().unwrap_or("N/A");
+            let parent_str = f.parent_folder.as_ref()
+                .map(|v| v.join(","))
+                .unwrap_or_else(|| "N/A".to_string());
+            vfs_log_debug!("[CLOUD_FILE] {}. name={}, id={}, parent={}", i + 1 + all_files.len(), f.file_name, id_str, parent_str);
+        }
+
+        all_files.extend(page_files);
+
+        match cloud_list.next_cursor {
+            Some(ref c) if !c.is_empty() => cursor = Some(c.clone()),
+            _ => break,
+        }
     }
 
-    let body = response.body_as_string().unwrap_or_default();
-    vfs_log_debug!("Response body length: {}", body.len());
+    vfs_log_debug!("Total cloud files across all pages: {}", all_files.len());
 
-    let cloud_list: CloudFileList = serde_json::from_str(&body).map_err(|e| {
-        vfs_log_error!("JSON parse failed: {}", e);
-        VfsError::new(ErrorCode::InvalidParameter, format!("Failed to parse cloud response: {}", e))
-    })?;
-
-    let cloud_files = cloud_list.files.unwrap_or_default();
-    vfs_log_debug!("Parsed {} cloud files", cloud_files.len());
-
-    for (i, f) in cloud_files.iter().enumerate() {
-        let id_str = f.id.as_deref().unwrap_or("N/A");
-        let parent_str = f.parent_folder.as_ref()
-            .map(|v| v.join(","))
-            .unwrap_or_else(|| "N/A".to_string());
-        vfs_log_debug!("[CLOUD_FILE] {}. name={}, id={}, parent={}", i + 1, f.file_name, id_str, parent_str);
-    }
-
-    let files: Vec<FileInfo> = cloud_files
+    let files: Vec<FileInfo> = all_files
         .into_iter()
         .filter_map(|f| {
             let modified_time = f.edited_time.as_ref().and_then(|t| {
@@ -494,8 +516,8 @@ async fn find_folder_in_parent(client: &HttpClient, folder_name: &str, parent_id
     params.push("pageSize=100".to_string());
     params.push(format!("queryParam=parentFolder='{}'", urlencoding::encode(parent_id)));
 
-    let url = format!("https://driveapis.cloud.huawei.com.cn/drive/v1/files?{}", params.join("&"));
-    vfs_log_debug!("Search URL: {}", url);
+    let base_url = format!("https://driveapis.cloud.huawei.com.cn/drive/v1/files?{}", params.join("&"));
+    vfs_log_debug!("Search base URL: {}", base_url);
 
     let at = get_at();
     let mut headers = std::collections::HashMap::new();
@@ -503,22 +525,11 @@ async fn find_folder_in_parent(client: &HttpClient, folder_name: &str, parent_id
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     headers.insert("Accept".to_string(), "application/json".to_string());
 
-    let response = client.get_with_headers(&url, headers).await?;
-    vfs_log_debug!("Search response status: {}", response.status_code);
-
-    if response.status_code != 200 {
-        vfs_log_error!("Search failed: status={}", response.status_code);
-        return Err(VfsError::new(
-            ErrorCode::NetworkError,
-            format!("Failed to search folder, status: {}", response.status_code),
-        ));
-    }
-
-    let body = response.body_as_string().unwrap_or_default();
-
     #[derive(Deserialize)]
     struct SearchResult {
         files: Option<Vec<FolderItem>>,
+        #[serde(rename = "nextCursor")]
+        next_cursor: Option<String>,
     }
 
     #[derive(Deserialize)]
@@ -530,23 +541,52 @@ async fn find_folder_in_parent(client: &HttpClient, folder_name: &str, parent_id
         mime_type: Option<String>,
     }
 
-    let result: SearchResult = serde_json::from_str(&body).map_err(|e| {
-        vfs_log_error!("Parse search result failed: {}", e);
-        VfsError::new(ErrorCode::InvalidParameter, format!("Failed to parse search result: {}", e))
-    })?;
+    let mut cursor: Option<String> = None;
 
-    if let Some(files) = result.files {
-        vfs_log_debug!("Found {} items under parent", files.len());
+    loop {
+        let url = if let Some(ref c) = cursor {
+            format!("{}&cursor={}", base_url, urlencoding::encode(c))
+        } else {
+            base_url.clone()
+        };
+        vfs_log_debug!("Search URL: {}", url);
 
-        for file in &files {
-            if file.file_name == folder_name {
-                if let Some(mime_type) = &file.mime_type {
-                    if mime_type.contains("folder") {
-                        vfs_log_debug!("<<< Found folder: name='{}', id='{}'", file.file_name, file.id);
-                        return Ok(file.id.clone());
+        let response = client.get_with_headers(&url, headers.clone()).await?;
+        vfs_log_debug!("Search response status: {}", response.status_code);
+
+        if response.status_code != 200 {
+            vfs_log_error!("Search failed: status={}", response.status_code);
+            return Err(VfsError::new(
+                ErrorCode::NetworkError,
+                format!("Failed to search folder, status: {}", response.status_code),
+            ));
+        }
+
+        let body = response.body_as_string().unwrap_or_default();
+
+        let result: SearchResult = serde_json::from_str(&body).map_err(|e| {
+            vfs_log_error!("Parse search result failed: {}", e);
+            VfsError::new(ErrorCode::InvalidParameter, format!("Failed to parse search result: {}", e))
+        })?;
+
+        if let Some(files) = result.files {
+            vfs_log_debug!("Found {} items under parent, next_cursor={:?}", files.len(), result.next_cursor);
+
+            for file in &files {
+                if file.file_name == folder_name {
+                    if let Some(mime_type) = &file.mime_type {
+                        if mime_type.contains("folder") {
+                            vfs_log_debug!("<<< Found folder: name='{}', id='{}'", file.file_name, file.id);
+                            return Ok(file.id.clone());
+                        }
                     }
                 }
             }
+        }
+
+        match result.next_cursor {
+            Some(ref c) if !c.is_empty() => cursor = Some(c.clone()),
+            _ => break,
         }
     }
 
