@@ -140,7 +140,7 @@ pub async fn stat_file(path: &str) -> VfsResult<StatFileResult> {
 pub(crate) async fn stat_file_by_absolute_path(path: &Path) -> Result<Option<crate::filesystem::FileStat>, RuntimeError> {
     vfs_log_debug!(">>> stat_file_by_absolute_path START: path={:?}", path);
 
-    let base_path = get_base_path_sync().map_err(RuntimeError::from).unwrap_or_default();
+    let base_path = get_base_path_sync().map_err(RuntimeError::from)?;
     let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
     let full_prefix = base_path.join(&workspace);
     let relative_path = path.strip_prefix(&full_prefix).unwrap_or(path);

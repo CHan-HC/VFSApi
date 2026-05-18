@@ -176,7 +176,7 @@ pub(crate) fn get_local_manifest_sync(path_str: &str) -> VfsResult<std::collecti
 pub(crate) async fn list_dir_by_absolute_path(path: &Path) -> Result<Vec<crate::filesystem::FileDirEntry>, RuntimeError> {
     vfs_log_debug!(">>> list_dir_by_absolute_path START: path={:?}", path);
 
-    let base_path = get_base_path_sync().map_err(RuntimeError::from).unwrap_or_default();
+    let base_path = get_base_path_sync().map_err(RuntimeError::from)?;
     let workspace = get_workspace_sync().map_err(RuntimeError::from)?;
     let full_prefix = base_path.join(&workspace);
     let relative_path = path.strip_prefix(&full_prefix).unwrap_or(path);

@@ -121,13 +121,9 @@ fn join_workspace(base: &Path, workspace: &Path, relative: &str) -> PathBuf {
     }
 }
 
-fn get_base_path_sync_or_empty() -> PathBuf {
-    get_base_path_sync().unwrap_or_default()
-}
-
 pub(crate) fn resolve_path_sync(relative_path: &str) -> VfsResult<PathBuf> {
     let workspace = get_workspace_sync()?;
-    let base_path = get_base_path_sync_or_empty();
+    let base_path = get_base_path_sync()?;
     let normalized = relative_path.trim_start_matches('/');
     let resolved = join_workspace(&base_path, &workspace, normalized);
     crate::hilog::log_info(&format!(
@@ -139,7 +135,7 @@ pub(crate) fn resolve_path_sync(relative_path: &str) -> VfsResult<PathBuf> {
 
 pub async fn resolve_path(relative_path: &str) -> VfsResult<PathBuf> {
     let workspace = get_workspace().await?;
-    let base_path = get_base_path_sync_or_empty();
+    let base_path = get_base_path_sync()?;
     let normalized = relative_path.trim_start_matches('/');
     let resolved = join_workspace(&base_path, &workspace, normalized);
     crate::hilog::log_info(&format!(
