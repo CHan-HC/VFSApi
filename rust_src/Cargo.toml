@@ -16,6 +16,12 @@ chrono = { version = "0.4", features = ["serde"] }
 urlencoding = "2.1"
 async-trait = "0.1"
 
+# P2P通信
+p2p-sdk = { path = "../p2p/p2psdk/sdk/crates/p2p-sdk" }
+p2p-tokio = { path = "../p2p/p2psdk/sdk/crates/p2p-tokio" }
+p2p-core = { path = "../p2p/p2psdk/sdk/crates/p2p-core" }
+p2p-io = { path = "../p2p/p2psdk/sdk/crates/p2p-io" }
+
 [build-dependencies]
 
 [profile.release]

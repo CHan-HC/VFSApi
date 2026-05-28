@@ -1,3 +1,9 @@
 [target.aarch64-unknown-linux-ohos]
 linker = "/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native/llvm/bin/aarch64-unknown-linux-ohos-clang"
 ar = "/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native/llvm/bin/llvm-ar"
+
+[env]
+CC_aarch64_unknown_linux_ohos = { value = "/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native/llvm/bin/aarch64-unknown-linux-ohos-clang", force = true }
+CXX_aarch64_unknown_linux_ohos = { value = "/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native/llvm/bin/aarch64-unknown-linux-ohos-clang++", force = true }
+CFLAGS_aarch64_unknown_linux_ohos = { value = "--sysroot=/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native/sysroot", force = true }
+AR_aarch64_unknown_linux_ohos = { value = "/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/native/llvm/bin/llvm-ar", force = true }

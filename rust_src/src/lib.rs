@@ -1,5 +1,6 @@
 pub mod atmanager;
 pub mod channel;
+pub mod p2p;
 pub mod filesystem;
 pub mod harmonyappfilesystem;
 mod error;

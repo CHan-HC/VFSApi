@@ -2,6 +2,7 @@ use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::ptr;
 
 use crate::vfs_log_error;
+use crate::vfs_log_info;
 
 // ── NAPI type aliases ──────────────────────────────────────────────
 type NapiEnv = *mut c_void;
@@ -473,11 +474,71 @@ extern "C" fn bind_server(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
     }
 }
 
+extern "C" fn p2p_connect(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
+    let mut argc: usize = 5;
+    let mut args: [NapiValue; 5] = [ptr::null_mut(); 5];
+    unsafe { napi_get_cb_info(env, info, &mut argc, args.as_mut_ptr(), ptr::null_mut(), ptr::null_mut()); }
+    if argc < 5 {
+        return return_string(env, "Error: need 5 args: idsUrl, natUrl, appId, userId, odid");
+    }
+    let ids_url = match read_napi_string(env, args[0]) { Some(s) => s, None => return return_string(env, "Error: invalid idsUrl"), };
+    let nat_url = match read_napi_string(env, args[1]) { Some(s) => s, None => return return_string(env, "Error: invalid natUrl"), };
+    let app_id = match read_napi_string(env, args[2]) { Some(s) => s, None => return return_string(env, "Error: invalid appId"), };
+    let user_id = match read_napi_string(env, args[3]) { Some(s) => s, None => return return_string(env, "Error: invalid userId"), };
+    let odid = match read_napi_string(env, args[4]) { Some(s) => s, None => return return_string(env, "Error: invalid odid"), };
+
+    vfs_log_info!("[NAPI] p2p_connect: ids={}, nat={}, app={}, user={}, odid={}", ids_url, nat_url, app_id, user_id, odid);
+    match crate::p2p::p2p_connect(&ids_url, &nat_url, &app_id, &user_id, &odid) {
+        Ok(peer_token) => return_string(env, &format!("P2P Connect OK\nPeer: {peer_token}")),
+        Err(e) => return_string(env, &format!("P2P Connect Error: {e}")),
+    }
+}
+
+extern "C" fn p2p_ice_state(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
+    let state = crate::p2p::p2p_ice_state();
+    return_string(env, &state)
+}
+
+extern "C" fn p2p_close(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
+    match crate::p2p::p2p_close() {
+        Ok(()) => return_string(env, "P2P closed"),
+        Err(e) => return_string(env, &format!("P2P Close Error: {e}")),
+    }
+}
+
+extern "C" fn p2p_send_text(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
+    let (argc, args) = unsafe { get_cb_args(env, info) };
+    if argc < 1 {
+        return return_string(env, "Error: need text argument");
+    }
+    let text = match read_napi_string(env, args[0]) { Some(s) => s, None => return return_string(env, "Error: invalid text"), };
+    match crate::p2p::p2p_send_text(&text) {
+        Ok(()) => return_string(env, "P2P send OK"),
+        Err(e) => return_string(env, &format!("P2P Send Error: {e}")),
+    }
+}
+
+extern "C" fn p2p_poll_messages(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
+    let msgs = crate::p2p::p2p_poll_messages();
+    if msgs.is_empty() {
+        return_string(env, "(no messages)")
+    } else {
+        return_string(env, &msgs.join("\n---\n"))
+    }
+}
+
+extern "C" fn p2p_test(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
+    vfs_log_info!("[NAPI] p2p_test called");
+    let result = crate::p2p::p2p_integration_test();
+    vfs_log_info!("[NAPI] p2p_test result:\n{}", result);
+    return_string(env, &result)
+}
+
 // ── Module registration ────────────────────────────────────────────
 
 extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
     vfs_log_error!("INIT_MODULE: called, env={:p}, exports={:p}", env, exports);
-    let descriptors: [NapiPropertyDescriptor; 12] = [
+    let descriptors: [NapiPropertyDescriptor; 18] = [
         NapiPropertyDescriptor {
             utf8name: b"setWorkspace\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(set_workspace),
@@ -547,6 +608,42 @@ extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
         NapiPropertyDescriptor {
             utf8name: b"bindServer\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(bind_server),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"p2pConnect\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(p2p_connect),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"p2pIceState\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(p2p_ice_state),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"p2pClose\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(p2p_close),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"p2pSendText\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(p2p_send_text),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"p2pPollMessages\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(p2p_poll_messages),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"p2pTest\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(p2p_test),
             getter: None, setter: None, value: ptr::null_mut(),
             attributes: 0, data: ptr::null_mut(),
         },
