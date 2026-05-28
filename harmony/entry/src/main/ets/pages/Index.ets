@@ -3,6 +3,7 @@ import { oauthManager } from '../oauth/OAuthManager';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { pushService } from '@kit.PushKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 
 const LOG_DOMAIN: number = 0xFF00;
 const LOG_TAG: string = 'VFS_APIS_UI';
@@ -53,21 +54,11 @@ struct Index {
           Button('get at')
             .width('100%')
             .onClick(async () => {
-              pushService.getToken().then(token => {
-                console.info('token = ' + token);
-              }).catch((err: BusinessError) => {
-                //console.error(0x0000, 'testTag', 'Failed to get push token: %{public}d %{public}s', err.code, err.message);
-                console.info('token = error.');
-              })
-
-
-
-
               this.logMessage = 'Loading...';
               const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
               let basePath = context.getApplicationContext().filesDir + '/taichu02';
-              let workspacePath = basePath + '/usr10086/session100000';
-              //entry.setBasePath(basePath);
+              let workspacePath = '/usr10086/session100000';
+              entry.setBasePath(basePath);
               entry.setWorkspace(workspacePath);
               let at = await oauthManager.getAT()!!;
               console.log('auth = ' + at);
@@ -207,6 +198,29 @@ struct Index {
               } catch (e) {
                 hilog.error(LOG_DOMAIN, LOG_TAG, '[UI] P2P Connect error: %{public}s', String(e));
                 this.logMessage = `P2P Connect Error: ${e}`;
+              }
+            })
+        }
+
+        ListItem() {
+          Button('P2P Register')
+            .width('100%')
+            .onClick(() => {
+              hilog.info(LOG_DOMAIN, LOG_TAG, '[UI] P2P Register button clicked');
+              this.logMessage = 'Running P2P Register IDs...';
+              try {
+                const idsUrl = 'http://81.71.29.250:28989'; // TODO: replace with real IDS URL
+                const natUrl = 'https://natservice-drcn.platform.dbankcloud.cn:443/trs/v1/route'; // TODO: replace with real NAT URL
+                const appId = 'HiCloud';
+                const userId = 'user123';
+                const odid = 'test_odid';
+                const extra = ''; // last parameter for register_ids, default empty
+                const result = entry.p2pRegisterIds(idsUrl, natUrl, appId, userId, odid, extra) as string;
+                hilog.info(LOG_DOMAIN, LOG_TAG, '[UI] P2P Register result: %{public}s', result);
+                this.logMessage = 'P2P Register IDs\n\n' + result;
+              } catch (e) {
+                hilog.error(LOG_DOMAIN, LOG_TAG, '[UI] P2P Register error: %{public}s', String(e));
+                this.logMessage = `P2P Register Error: ${e}`;
               }
             })
         }

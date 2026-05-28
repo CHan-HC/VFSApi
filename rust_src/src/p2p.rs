@@ -35,6 +35,41 @@ pub fn p2p_poll_messages() -> Vec<String> {
     msgs
 }
 
+/// Standalone register_ids call for testing.
+/// Initializes the client then registers IDS.
+/// The `extra` parameter is passed through to register_ids.
+pub fn p2p_register_ids(
+    ids_url: &str,
+    nat_url: &str,
+    app_id: &str,
+    user_id: &str,
+    odid: &str,
+    extra: &str,
+) -> Result<String, String> {
+    vfs_log_info!("[P2P] p2p_register_ids start: app_id={}, user_id={}", app_id, user_id);
+
+    let client = get_client();
+    let mut guard = client.lock().map_err(|e| format!("lock: {e}"))?;
+
+    guard.init(Config {
+        ids_url: ids_url.to_string(),
+        nat_url: nat_url.to_string(),
+    });
+
+    let http = SyncHttpTransport::new();
+
+    vfs_log_info!("[P2P] registering IDS (standalone)...");
+    guard
+        .register_ids(&http, app_id, user_id, odid, extra)
+        .map_err(|e| {
+            vfs_log_error!("[P2P] register_ids failed: {}", e);
+            format!("register_ids: {e}")
+        })?;
+    vfs_log_info!("[P2P] register_ids success");
+
+    Ok("register_ids OK".to_string())
+}
+
 /// Establish a P2P connection following the full flow:
 /// init → register_ids → query_ids → connect.
 ///
