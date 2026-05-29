@@ -136,9 +136,21 @@ pub fn p2p_connect(
         vfs_log_error!("[P2P] connect failed: {}", e);
         format!("connect: {e}")
     })?;
-    vfs_log_info!("[P2P] connect initiated, waiting for ICE...");
+    vfs_log_info!("[P2P] connect initiated, waiting for ICE agent...");
+    // Drop guard so background thread can acquire lock
+    drop(guard);
 
-    Ok(peer.token)
+    // Wait for ICE agent to be created (connect runs in background thread)
+    for i in 0..300 {
+        let state = p2p_ice_state();
+        if state != "NONE" {
+            vfs_log_info!("[P2P] ICE agent ready after {} polls, state={}", i * 100, state);
+            return Ok(peer.token);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    vfs_log_error!("[P2P] ICE agent not ready after 30s timeout");
+    Err("ICE agent not ready after 30s".to_string())
 }
 
 /// Get current ICE state. Returns "NONE" if not initialized.
