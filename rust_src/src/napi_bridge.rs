@@ -548,6 +548,19 @@ extern "C" fn p2p_poll_messages(env: NapiEnv, _info: NapiCallbackInfo) -> NapiVa
     }
 }
 
+extern "C" fn handle_push_message(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
+    let (argc, args) = unsafe { get_cb_args(env, info) };
+    if argc < 1 {
+        return return_string(env, "Error: need payload argument");
+    }
+    let payload = match read_napi_string(env, args[0]) { Some(s) => s, None => return return_string(env, "Error: invalid payload"), };
+
+    vfs_log_info!("[NAPI] handlePushMessage called");
+    let result = crate::p2p::handle_push_message(&payload);
+    vfs_log_info!("[NAPI] handlePushMessage result: {}", result);
+    return_string(env, &result)
+}
+
 extern "C" fn p2p_test(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
     vfs_log_info!("[NAPI] p2p_test called");
     let result = crate::p2p::p2p_integration_test();
@@ -559,7 +572,7 @@ extern "C" fn p2p_test(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
 
 extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
     vfs_log_error!("INIT_MODULE: called, env={:p}, exports={:p}", env, exports);
-    let descriptors: [NapiPropertyDescriptor; 19] = [
+    let descriptors: [NapiPropertyDescriptor; 20] = [
         NapiPropertyDescriptor {
             utf8name: b"setWorkspace\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(set_workspace),
@@ -671,6 +684,12 @@ extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
         NapiPropertyDescriptor {
             utf8name: b"p2pTest\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(p2p_test),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"handlePushMessage\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(handle_push_message),
             getter: None, setter: None, value: ptr::null_mut(),
             attributes: 0, data: ptr::null_mut(),
         },

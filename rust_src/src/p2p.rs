@@ -261,3 +261,119 @@ pub fn p2p_integration_test() -> String {
     output.push_str("\n=== Test Complete ===");
     output
 }
+
+// ── Push message handler (mimics channel::on_message, but returns result via P2P) ──
+
+/// Handle a push message: parse JSON, route by `type` field, and return the response
+/// string (to be sent via P2P by the caller). Logic mirrors `channel::on_message`
+/// but the response goes through the P2P channel instead of WebSocket.
+pub fn handle_push_message(payload: &str) -> String {
+    vfs_log_info!("[P2P] handle_push_message received: {}", payload);
+
+    let parsed: serde_json::Value = match serde_json::from_str(payload) {
+        Ok(v) => v,
+        Err(e) => {
+            vfs_log_error!("[P2P] handle_push_message: failed to parse JSON: {}", e);
+            return format!("{{\"error\": \"Invalid JSON: {}\"}}", e);
+        }
+    };
+
+    let msg_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    match msg_type {
+        "file_list_request" => handle_push_file_list_request(&parsed),
+        "sync_request" => handle_push_sync_request(&parsed),
+        _ => {
+            vfs_log_info!("[P2P] handle_push_message: unhandled type: {}", msg_type);
+            format!("{{\"error\": \"Unhandled message type: {}\"}}", msg_type)
+        }
+    }
+}
+
+fn handle_push_file_list_request(msg: &serde_json::Value) -> String {
+    let request_id = match msg.get("request_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => {
+            vfs_log_error!("[P2P] file_list_request missing request_id");
+            return r#"{"error": "missing request_id"}"#.to_string();
+        }
+    };
+    let path = msg.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+
+    vfs_log_info!("[P2P] handle_push_file_list_request: request_id='{}', path='{}'", request_id, path);
+
+    let manifest = match crate::list::get_local_manifest_sync(path) {
+        Ok(m) => m,
+        Err(e) => {
+            vfs_log_error!("[P2P] get_local_manifest_sync failed: {}", e.message);
+            return serde_json::json!({
+                "type": "file_list_response",
+                "request_id": request_id,
+                "path": path,
+                "error": e.message,
+            }).to_string();
+        }
+    };
+
+    let response = serde_json::json!({
+        "type": "file_list_response",
+        "request_id": request_id,
+        "path": path,
+        "manifest": manifest,
+    });
+
+    vfs_log_info!("[P2P] handle_push_file_list_request: response ready");
+    response.to_string()
+}
+
+fn handle_push_sync_request(msg: &serde_json::Value) -> String {
+    let request_id = match msg.get("request_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => {
+            vfs_log_error!("[P2P] sync_request missing request_id");
+            return r#"{"error": "missing request_id"}"#.to_string();
+        }
+    };
+    let path = msg.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    let file_name = msg.get("fileName").and_then(|v| v.as_str()).unwrap_or("");
+
+    vfs_log_info!("[P2P] handle_push_sync_request: request_id='{}', path='{}', fileName='{}'",
+        request_id, path, file_name);
+
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            vfs_log_error!("[P2P] Failed to create tokio runtime: {}", e);
+            return serde_json::json!({
+                "type": "sync_response",
+                "request_id": request_id,
+                "path": path,
+                "fileName": file_name,
+                "error": format!("Internal error: {}", e),
+            }).to_string();
+        }
+    };
+
+    match rt.block_on(crate::upload::sync_file_to_cloud(path)) {
+        Ok(result) => {
+            vfs_log_info!("[P2P] handle_push_sync_request success: file_id={}", result.file_id);
+            serde_json::json!({
+                "type": "sync_response",
+                "request_id": request_id,
+                "path": path,
+                "fileName": file_name,
+                "file_id": result.file_id,
+                "sha256": result.sha256,
+            }).to_string()
+        }
+        Err(e) => {
+            vfs_log_error!("[P2P] sync_file_to_cloud failed: {}", e.message);
+            serde_json::json!({
+                "type": "sync_response",
+                "request_id": request_id,
+                "path": path,
+                "fileName": file_name,
+                "error": e.message,
+            }).to_string()
+        }
+    }
+}
