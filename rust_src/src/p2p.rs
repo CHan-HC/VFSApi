@@ -140,17 +140,26 @@ pub fn p2p_connect(
     // Drop guard so background thread can acquire lock
     drop(guard);
 
-    // Wait for ICE agent to be created (connect runs in background thread)
+    // Wait for ICE negotiation to complete (connect runs in background thread).
+    // Must reach Connected/Completed for a nominated pair to exist before send_text works.
     for i in 0..300 {
         let state = p2p_ice_state();
-        if state != "NONE" {
-            vfs_log_info!("[P2P] ICE agent ready after {} polls, state={}", i * 100, state);
-            return Ok(peer.token);
+        match state.as_str() {
+            "Connected" | "Completed" => {
+                vfs_log_info!("[P2P] ICE ready after {} polls, state={}", i * 100, state);
+                return Ok(peer.token);
+            }
+            "Failed" => {
+                vfs_log_error!("[P2P] ICE negotiation failed");
+                return Err("ICE negotiation failed".to_string());
+            }
+            _ => {}
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    vfs_log_error!("[P2P] ICE agent not ready after 30s timeout");
-    Err("ICE agent not ready after 30s".to_string())
+    let final_state = p2p_ice_state();
+    vfs_log_error!("[P2P] ICE not ready after 30s timeout, state={}", final_state);
+    Err(format!("ICE not ready after 30s, state={}", final_state))
 }
 
 /// Get current ICE state. Returns "NONE" if not initialized.
