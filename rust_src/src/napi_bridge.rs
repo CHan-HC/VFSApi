@@ -496,20 +496,21 @@ extern "C" fn p2p_register_ids(env: NapiEnv, info: NapiCallbackInfo) -> NapiValu
 }
 
 extern "C" fn p2p_connect(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
-    let mut argc: usize = 5;
-    let mut args: [NapiValue; 5] = [ptr::null_mut(); 5];
+    let mut argc: usize = 6;
+    let mut args: [NapiValue; 6] = [ptr::null_mut(); 6];
     unsafe { napi_get_cb_info(env, info, &mut argc, args.as_mut_ptr(), ptr::null_mut(), ptr::null_mut()); }
     if argc < 5 {
-        return return_string(env, "Error: need 5 args: idsUrl, natUrl, appId, userId, odid");
+        return return_string(env, "Error: need at least 5 args: idsUrl, natUrl, appId, userId, odid [, sendOnReady]");
     }
     let ids_url = match read_napi_string(env, args[0]) { Some(s) => s, None => return return_string(env, "Error: invalid idsUrl"), };
     let nat_url = match read_napi_string(env, args[1]) { Some(s) => s, None => return return_string(env, "Error: invalid natUrl"), };
     let app_id = match read_napi_string(env, args[2]) { Some(s) => s, None => return return_string(env, "Error: invalid appId"), };
     let user_id = match read_napi_string(env, args[3]) { Some(s) => s, None => return return_string(env, "Error: invalid userId"), };
     let odid = match read_napi_string(env, args[4]) { Some(s) => s, None => return return_string(env, "Error: invalid odid"), };
+    let send_on_ready = if argc >= 6 { read_napi_string(env, args[5]).unwrap_or_default() } else { String::new() };
 
-    vfs_log_info!("[NAPI] p2p_connect: ids={}, nat={}, app={}, user={}, odid={}", ids_url, nat_url, app_id, user_id, odid);
-    match crate::p2p::p2p_connect(&ids_url, &nat_url, &app_id, &user_id, &odid) {
+    vfs_log_info!("[NAPI] p2p_connect: ids={}, nat={}, app={}, user={}, odid={}, sendOnReady.len={}", ids_url, nat_url, app_id, user_id, odid, send_on_ready.len());
+    match crate::p2p::p2p_connect(&ids_url, &nat_url, &app_id, &user_id, &odid, &send_on_ready) {
         Ok(peer_token) => return_string(env, &format!("P2P Connect OK\nPeer: {peer_token}")),
         Err(e) => return_string(env, &format!("P2P Connect Error: {e}")),
     }
@@ -518,6 +519,14 @@ extern "C" fn p2p_connect(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
 extern "C" fn p2p_ice_state(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
     let state = crate::p2p::p2p_ice_state();
     return_string(env, &state)
+}
+
+extern "C" fn p2p_is_ready(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
+    if crate::p2p::p2p_is_ready() {
+        return_string(env, "true")
+    } else {
+        return_string(env, "false")
+    }
 }
 
 extern "C" fn p2p_close(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
@@ -572,7 +581,7 @@ extern "C" fn p2p_test(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
 
 extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
     vfs_log_error!("INIT_MODULE: called, env={:p}, exports={:p}", env, exports);
-    let descriptors: [NapiPropertyDescriptor; 20] = [
+    let descriptors: [NapiPropertyDescriptor; 21] = [
         NapiPropertyDescriptor {
             utf8name: b"setWorkspace\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(set_workspace),
@@ -660,6 +669,12 @@ extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
         NapiPropertyDescriptor {
             utf8name: b"p2pIceState\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(p2p_ice_state),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"p2pIsReady\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(p2p_is_ready),
             getter: None, setter: None, value: ptr::null_mut(),
             attributes: 0, data: ptr::null_mut(),
         },

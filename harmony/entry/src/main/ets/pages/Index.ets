@@ -192,7 +192,7 @@ struct Index {
                 const appId = 'HiCloud';
                 const userId = 'user123';
                 const odid = 'test_odid';
-                const result = entry.p2pConnect(idsUrl, natUrl, appId, userId, odid) as string;
+                const result = entry.p2pConnect(idsUrl, natUrl, appId, userId, odid, '') as string;
                 hilog.info(LOG_DOMAIN, LOG_TAG, '[UI] P2P Connect result: %{public}s', result);
                 this.logMessage = 'P2P Connect\n\n' + result;
               } catch (e) {

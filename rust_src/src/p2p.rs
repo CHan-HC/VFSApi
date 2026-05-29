@@ -73,13 +73,19 @@ pub fn p2p_register_ids(
 /// Establish a P2P connection following the full flow:
 /// init → register_ids → query_ids → connect.
 ///
-/// Returns the connected peer token on success.
+/// If `send_on_ready` is non-empty, an `on_state_change` callback is registered
+/// that watches for ICE Connected/Completed, then auto-sends the message via
+/// `p2p_send_text`. The callback fires on the SDK's ICE tick thread, so a
+/// channel + background thread pattern is used to avoid locking issues.
+///
+/// Returns the connected peer token on success (non-blocking).
 pub fn p2p_connect(
     ids_url: &str,
     nat_url: &str,
     app_id: &str,
     user_id: &str,
     odid: &str,
+    send_on_ready: &str,
 ) -> Result<String, String> {
     vfs_log_info!("[P2P] p2p_connect start: app_id={}, user_id={}", app_id, user_id);
 
@@ -101,6 +107,43 @@ pub fn p2p_connect(
                 q.push(text);
             }
         }));
+    }
+
+    // Register on_state_change callback → sends state through channel to sender thread
+    let send_msg = send_on_ready.to_string();
+    if !send_msg.is_empty() {
+        let (state_tx, state_rx) = mpsc::channel::<IceState>();
+        guard.on_state_change(Box::new(move |state: IceState| {
+            let _ = state_tx.send(state);
+        }));
+
+        // Spawn sender thread: waits for Connected/Completed then sends
+        std::thread::spawn(move || {
+            vfs_log_info!("[P2P] sender thread: waiting for ICE ready...");
+            loop {
+                match state_rx.recv() {
+                    Ok(state) => {
+                        vfs_log_info!("[P2P] sender thread: ICE state={}", state);
+                        if state == IceState::Connected || state == IceState::Completed {
+                            vfs_log_info!("[P2P] ICE ready, auto-sending: {}", send_msg);
+                            match crate::p2p::p2p_send_text(&send_msg) {
+                                Ok(()) => vfs_log_info!("[P2P] auto-send OK"),
+                                Err(e) => vfs_log_error!("[P2P] auto-send failed: {}", e),
+                            }
+                            break;
+                        }
+                        if state == IceState::Failed || state == IceState::Closed {
+                            vfs_log_error!("[P2P] ICE failed/closed, abort auto-send");
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        vfs_log_error!("[P2P] sender thread: channel closed");
+                        break;
+                    }
+                }
+            }
+        });
     }
 
     let http = SyncHttpTransport::new();
@@ -136,30 +179,16 @@ pub fn p2p_connect(
         vfs_log_error!("[P2P] connect failed: {}", e);
         format!("connect: {e}")
     })?;
-    vfs_log_info!("[P2P] connect initiated, waiting for ICE agent...");
-    // Drop guard so background thread can acquire lock
     drop(guard);
+    vfs_log_info!("[P2P] connect initiated (non-blocking), peer={}", peer.token);
 
-    // Wait for ICE negotiation to complete (connect runs in background thread).
-    // Must reach Connected/Completed for a nominated pair to exist before send_text works.
-    for i in 0..300 {
-        let state = p2p_ice_state();
-        match state.as_str() {
-            "Connected" | "Completed" => {
-                vfs_log_info!("[P2P] ICE ready after {} polls, state={}", i * 100, state);
-                return Ok(peer.token);
-            }
-            "Failed" => {
-                vfs_log_error!("[P2P] ICE negotiation failed");
-                return Err("ICE negotiation failed".to_string());
-            }
-            _ => {}
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    let final_state = p2p_ice_state();
-    vfs_log_error!("[P2P] ICE not ready after 30s timeout, state={}", final_state);
-    Err(format!("ICE not ready after 30s, state={}", final_state))
+    Ok(peer.token)
+}
+
+/// Check whether ICE is ready for sending data (Connected or Completed).
+pub fn p2p_is_ready() -> bool {
+    let state = p2p_ice_state();
+    matches!(state.as_str(), "Connected" | "Completed")
 }
 
 /// Get current ICE state. Returns "NONE" if not initialized.
