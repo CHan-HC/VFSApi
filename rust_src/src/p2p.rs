@@ -54,6 +54,7 @@ pub fn p2p_register_ids(
     guard.init(Config {
         ids_url: ids_url.to_string(),
         nat_url: nat_url.to_string(),
+        nat_token_url: String::new(),
     });
 
     let http = SyncHttpTransport::new();
@@ -137,6 +138,7 @@ pub fn p2p_connect(
     guard.init(Config {
         ids_url: ids_url.to_string(),
         nat_url: nat_url.to_string(),
+        nat_token_url: String::new(),
     });
 
     // Register on_data callback → process messages like handlePushMessage and reply via P2P.
@@ -274,6 +276,7 @@ pub fn p2p_integration_test() -> String {
     let config = Config {
         ids_url: String::new(),
         nat_url: String::new(),
+        nat_token_url: String::new(),
     };
 
     let mut client = P2pClient::new();
