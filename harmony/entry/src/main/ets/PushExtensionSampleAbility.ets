@@ -15,55 +15,39 @@ const P2P_ODID = deviceInfo.ODID;
 export default class PushExtensionSampleAbility extends PushExtensionAbility {
   onReceiveMessage(payload: pushCommon.PushPayload): void {
     hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] onReceiveMessage called');
-    let basePath =  '/data/storage/el2/base/files/taichu02';
-    let workspacePath = '/usr10086/session100000';
-    entry.setBasePath(basePath);
-    entry.setWorkspace(workspacePath);
-    // Extract message data from push payload.
-    // Payload structure: {"data":"{...inner message...}", "header":{...}}
+    entry.setBasePath('/data/storage/el2/base/files/taichu02');
+    entry.setWorkspace('/usr10086/session100000');
+
+    // Extract inner message from push payload: {"data":"{...}", "header":{...}}
     const rawData = payload.data;
     if (!rawData || rawData.length === 0) {
       hilog.warn(LOG_DOMAIN, LOG_TAG, '[Push] empty payload data, skip');
       return;
     }
-
     hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] raw payload: %{public}s', rawData);
 
-    // Parse outer JSON and extract the inner message from the "data" field
     let innerMessage: string;
     try {
       const outer = JSON.parse(rawData) as object;
       innerMessage = outer['data'] as string;
       if (!innerMessage || innerMessage.length === 0) {
-        hilog.warn(LOG_DOMAIN, LOG_TAG, '[Push] no inner data field, using raw');
         innerMessage = rawData;
       }
     } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[Push] JSON.parse failed, using raw: %{public}s', String(e));
       innerMessage = rawData;
     }
-
     hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] inner message: %{public}s', innerMessage);
 
-    // Step 1: Process the push message via Rust handlePushMessage
-    let result: string;
-    try {
-      result = entry.handlePushMessage(innerMessage) as string;
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] handlePushMessage result: %{public}s', result);
-    } catch (e) {
-      hilog.error(LOG_DOMAIN, LOG_TAG, '[Push] handlePushMessage error: %{public}s', String(e));
-      return;
-    }
-
-    // Step 2: Get push token, then connect via P2P (non-blocking).
-    // The push token is passed to register_ids so the P2P server can identify this device.
+    // Single Rust call: process message + P2P connect/send (all in Rust)
     pushService.getToken().then((pushToken: string) => {
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] push token: %{public}s', pushToken);
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] token: %{public}s', pushToken);
       try {
-        const connectResult = entry.p2pConnect(P2P_IDS_URL, P2P_NAT_URL, P2P_APP_ID, P2P_USER_ID, P2P_ODID, pushToken, result) as string;
-        hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] P2P connect initiated: %{public}s', connectResult);
+        const result = entry.p2pHandlePushMessage(
+          P2P_IDS_URL, P2P_NAT_URL, P2P_APP_ID, P2P_USER_ID, P2P_ODID, pushToken, innerMessage
+        ) as string;
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] p2pHandlePushMessage result: %{public}s', result);
       } catch (e) {
-        hilog.error(LOG_DOMAIN, LOG_TAG, '[Push] P2P connect error: %{public}s', String(e));
+        hilog.error(LOG_DOMAIN, LOG_TAG, '[Push] p2pHandlePushMessage error: %{public}s', String(e));
       }
     }).catch((err: Error) => {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[Push] getToken error: %{public}s', String(err));

@@ -571,6 +571,26 @@ extern "C" fn handle_push_message(env: NapiEnv, info: NapiCallbackInfo) -> NapiV
     return_string(env, &result)
 }
 
+extern "C" fn p2p_handle_push_msg(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
+    let mut argc: usize = 7;
+    let mut args: [NapiValue; 7] = [ptr::null_mut(); 7];
+    unsafe { napi_get_cb_info(env, info, &mut argc, args.as_mut_ptr(), ptr::null_mut(), ptr::null_mut()); }
+    if argc < 7 {
+        return return_string(env, "Error: need 7 args: idsUrl, natUrl, appId, userId, odid, pushToken, payload");
+    }
+    let ids_url = match read_napi_string(env, args[0]) { Some(s) => s, None => return return_string(env, "Error: invalid idsUrl"), };
+    let nat_url = match read_napi_string(env, args[1]) { Some(s) => s, None => return return_string(env, "Error: invalid natUrl"), };
+    let app_id = match read_napi_string(env, args[2]) { Some(s) => s, None => return return_string(env, "Error: invalid appId"), };
+    let user_id = match read_napi_string(env, args[3]) { Some(s) => s, None => return return_string(env, "Error: invalid userId"), };
+    let odid = match read_napi_string(env, args[4]) { Some(s) => s, None => return return_string(env, "Error: invalid odid"), };
+    let push_token = match read_napi_string(env, args[5]) { Some(s) => s, None => return return_string(env, "Error: invalid pushToken"), };
+    let payload = match read_napi_string(env, args[6]) { Some(s) => s, None => return return_string(env, "Error: invalid payload"), };
+
+    vfs_log_info!("[NAPI] p2pHandlePushMessage: ids={}, app={}, user={}, pushToken.len={}, payload.len={}", ids_url, app_id, user_id, push_token.len(), payload.len());
+    let result = crate::p2p::p2p_handle_push_message(&ids_url, &nat_url, &app_id, &user_id, &odid, &push_token, &payload);
+    return_string(env, &result)
+}
+
 extern "C" fn p2p_test(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
     vfs_log_info!("[NAPI] p2p_test called");
     let result = crate::p2p::p2p_integration_test();
@@ -582,7 +602,7 @@ extern "C" fn p2p_test(env: NapiEnv, _info: NapiCallbackInfo) -> NapiValue {
 
 extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
     vfs_log_error!("INIT_MODULE: called, env={:p}, exports={:p}", env, exports);
-    let descriptors: [NapiPropertyDescriptor; 21] = [
+    let descriptors: [NapiPropertyDescriptor; 22] = [
         NapiPropertyDescriptor {
             utf8name: b"setWorkspace\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(set_workspace),
@@ -706,6 +726,12 @@ extern "C" fn init_module(env: NapiEnv, exports: NapiValue) -> NapiValue {
         NapiPropertyDescriptor {
             utf8name: b"handlePushMessage\0".as_ptr() as *const c_char,
             name: ptr::null_mut(), method: Some(handle_push_message),
+            getter: None, setter: None, value: ptr::null_mut(),
+            attributes: 0, data: ptr::null_mut(),
+        },
+        NapiPropertyDescriptor {
+            utf8name: b"p2pHandlePushMessage\0".as_ptr() as *const c_char,
+            name: ptr::null_mut(), method: Some(p2p_handle_push_msg),
             getter: None, setter: None, value: ptr::null_mut(),
             attributes: 0, data: ptr::null_mut(),
         },

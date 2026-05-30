@@ -70,6 +70,47 @@ pub fn p2p_register_ids(
     Ok("register_ids OK".to_string())
 }
 
+/// Single entry point for push message handling.
+///
+/// 1. Process the message via `handle_push_message` (file_list / sync request)
+/// 2. If P2P ICE is already Connected/Completed → send result directly
+/// 3. Otherwise → establish P2P connection, auto-send result when ICE ready
+///
+/// `on_data` is always registered during connection, so subsequent P2P
+/// messages from the peer are handled automatically.
+pub fn p2p_handle_push_message(
+    ids_url: &str,
+    nat_url: &str,
+    app_id: &str,
+    user_id: &str,
+    odid: &str,
+    push_token: &str,
+    payload: &str,
+) -> String {
+    vfs_log_info!("[P2P] p2p_handle_push_message: payload_len={}", payload.len());
+
+    // Step 1: Process the push message (file_list_request / sync_request)
+    let result = handle_push_message(payload);
+    vfs_log_info!("[P2P] p2p_handle_push_message: result_len={}", result.len());
+
+    // Step 2: Check if P2P is already connected
+    if p2p_is_ready() {
+        vfs_log_info!("[P2P] already connected, sending result directly");
+        match p2p_send_text(&result) {
+            Ok(()) => vfs_log_info!("[P2P] direct send OK"),
+            Err(e) => vfs_log_error!("[P2P] direct send failed: {}", e),
+        }
+    } else {
+        vfs_log_info!("[P2P] not connected, establishing P2P connection with auto-send");
+        match p2p_connect(ids_url, nat_url, app_id, user_id, odid, push_token, &result) {
+            Ok(peer) => vfs_log_info!("[P2P] connect initiated, peer={}, will auto-send when ICE ready", peer),
+            Err(e) => vfs_log_error!("[P2P] connect failed: {}", e),
+        }
+    }
+
+    result
+}
+
 /// Establish a P2P connection following the full flow:
 /// init → register_ids → query_ids → connect.
 ///
