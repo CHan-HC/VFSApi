@@ -98,14 +98,24 @@ pub fn p2p_connect(
         nat_url: nat_url.to_string(),
     });
 
-    // Register on_data callback → pushes received messages to the shared queue
+    // Register on_data callback → process messages like handlePushMessage and reply via P2P.
+    // fire_on_data now drops the lock before calling the callback, so p2p_send_text is safe.
     {
         let queue = get_received_queue().clone();
         guard.on_data(Box::new(move |payload: Vec<u8>| {
             let text = String::from_utf8_lossy(&payload).to_string();
             vfs_log_info!("[P2P] on_data received: {}", text);
+            // Also push to queue for p2p_poll_messages compatibility
             if let Ok(mut q) = queue.lock() {
-                q.push(text);
+                q.push(text.clone());
+            }
+            // Process the message with the same logic as handlePushMessage
+            let response = crate::p2p::handle_push_message(&text);
+            vfs_log_info!("[P2P] on_data response: {}", response);
+            // Send response back via P2P
+            match crate::p2p::p2p_send_text(&response) {
+                Ok(()) => vfs_log_info!("[P2P] on_data reply OK"),
+                Err(e) => vfs_log_error!("[P2P] on_data reply failed: {}", e),
             }
         }));
     }
