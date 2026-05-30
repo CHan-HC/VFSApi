@@ -1,4 +1,4 @@
-import { pushCommon, PushExtensionAbility } from "@kit.PushKit";
+import { pushCommon, pushService, PushExtensionAbility } from "@kit.PushKit";
 import entry from 'libvfs_apis.so';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
@@ -55,13 +55,18 @@ export default class PushExtensionSampleAbility extends PushExtensionAbility {
       return;
     }
 
-    // Step 2: Connect via P2P (non-blocking).
-    // When ICE reaches Connected/Completed, p2p_connect auto-sends `result` via P2P.
-    try {
-      const connectResult = entry.p2pConnect(P2P_IDS_URL, P2P_NAT_URL, P2P_APP_ID, P2P_USER_ID, P2P_ODID, result) as string;
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] P2P connect initiated: %{public}s', connectResult);
-    } catch (e) {
-      hilog.error(LOG_DOMAIN, LOG_TAG, '[Push] P2P connect error: %{public}s', String(e));
-    }
+    // Step 2: Get push token, then connect via P2P (non-blocking).
+    // The push token is passed to register_ids so the P2P server can identify this device.
+    pushService.getToken().then((pushToken: string) => {
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] push token: %{public}s', pushToken);
+      try {
+        const connectResult = entry.p2pConnect(P2P_IDS_URL, P2P_NAT_URL, P2P_APP_ID, P2P_USER_ID, P2P_ODID, pushToken, result) as string;
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] P2P connect initiated: %{public}s', connectResult);
+      } catch (e) {
+        hilog.error(LOG_DOMAIN, LOG_TAG, '[Push] P2P connect error: %{public}s', String(e));
+      }
+    }).catch((err: Error) => {
+      hilog.error(LOG_DOMAIN, LOG_TAG, '[Push] getToken error: %{public}s', String(err));
+    });
   }
 }

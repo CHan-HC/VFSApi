@@ -85,9 +85,10 @@ pub fn p2p_connect(
     app_id: &str,
     user_id: &str,
     odid: &str,
+    push_token: &str,
     send_on_ready: &str,
 ) -> Result<String, String> {
-    vfs_log_info!("[P2P] p2p_connect start: app_id={}, user_id={}", app_id, user_id);
+    vfs_log_info!("[P2P] p2p_connect start: app_id={}, user_id={}, push_token={}", app_id, user_id, push_token);
 
     let client = get_client();
     let mut guard = client.lock().map_err(|e| format!("lock: {e}"))?;
@@ -109,41 +110,24 @@ pub fn p2p_connect(
         }));
     }
 
-    // Register on_state_change callback → sends state through channel to sender thread
+    // Register on_state_change callback → auto-send when ICE is ready.
+    // fire_state_change now drops the lock before calling the callback,
+    // so it's safe to call p2p_send_text directly here (no deadlock).
     let send_msg = send_on_ready.to_string();
     if !send_msg.is_empty() {
-        let (state_tx, state_rx) = mpsc::channel::<IceState>();
+        vfs_log_info!("[P2P] registering on_state_change for auto-send, msg_len={}", send_msg.len());
         guard.on_state_change(Box::new(move |state: IceState| {
-            let _ = state_tx.send(state);
-        }));
-
-        // Spawn sender thread: waits for Connected/Completed then sends
-        std::thread::spawn(move || {
-            vfs_log_info!("[P2P] sender thread: waiting for ICE ready...");
-            loop {
-                match state_rx.recv() {
-                    Ok(state) => {
-                        vfs_log_info!("[P2P] sender thread: ICE state={}", state);
-                        if state == IceState::Connected || state == IceState::Completed {
-                            vfs_log_info!("[P2P] ICE ready, auto-sending: {}", send_msg);
-                            match crate::p2p::p2p_send_text(&send_msg) {
-                                Ok(()) => vfs_log_info!("[P2P] auto-send OK"),
-                                Err(e) => vfs_log_error!("[P2P] auto-send failed: {}", e),
-                            }
-                            break;
-                        }
-                        if state == IceState::Failed || state == IceState::Closed {
-                            vfs_log_error!("[P2P] ICE failed/closed, abort auto-send");
-                            break;
-                        }
-                    }
-                    Err(_) => {
-                        vfs_log_error!("[P2P] sender thread: channel closed");
-                        break;
-                    }
+            vfs_log_info!("[P2P] on_state_change callback: state={}", state);
+            if state == IceState::Connected || state == IceState::Completed {
+                vfs_log_info!("[P2P] ICE ready, auto-sending text: {}", send_msg);
+                match crate::p2p::p2p_send_text(&send_msg) {
+                    Ok(()) => vfs_log_info!("[P2P] auto-send OK"),
+                    Err(e) => vfs_log_error!("[P2P] auto-send failed: {}", e),
                 }
+            } else if state == IceState::Failed || state == IceState::Closed {
+                vfs_log_error!("[P2P] ICE {}, abort auto-send", state);
             }
-        });
+        }));
     }
 
     let http = SyncHttpTransport::new();
@@ -151,7 +135,7 @@ pub fn p2p_connect(
     // Step 1: Register IDS
     vfs_log_info!("[P2P] registering IDS...");
     guard
-        .register_ids(&http, app_id, user_id, odid, "")
+        .register_ids(&http, app_id, user_id, odid, push_token)
         .map_err(|e| {
             vfs_log_error!("[P2P] register_ids failed: {}", e);
             format!("register_ids: {e}")
@@ -211,9 +195,24 @@ pub fn p2p_close() -> Result<(), String> {
 
 /// Send text through the established P2P channel.
 pub fn p2p_send_text(text: &str) -> Result<(), String> {
+    vfs_log_info!("[P2P] p2p_send_text: text_len={}", text.len());
     let client = get_client();
-    let guard = client.lock().map_err(|e| format!("lock: {e}"))?;
-    guard.send_text(text).map_err(|e| format!("send_text: {e}"))
+    let guard = client.lock().map_err(|e| {
+        vfs_log_error!("[P2P] p2p_send_text: client lock error: {}", e);
+        format!("lock: {e}")
+    })?;
+    let ice_state = guard.ice_state().map(|s| format!("{s}")).unwrap_or_else(|| "NONE".to_string());
+    vfs_log_info!("[P2P] p2p_send_text: ICE state before send={}", ice_state);
+    match guard.send_text(text) {
+        Ok(()) => {
+            vfs_log_info!("[P2P] p2p_send_text: OK");
+            Ok(())
+        }
+        Err(e) => {
+            vfs_log_error!("[P2P] p2p_send_text failed: {}", e);
+            Err(format!("send_text: {e}"))
+        }
+    }
 }
 
 /// Full integration test: init → register_ids → query_ids → connect → wait for ICE.

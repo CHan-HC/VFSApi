@@ -496,21 +496,22 @@ extern "C" fn p2p_register_ids(env: NapiEnv, info: NapiCallbackInfo) -> NapiValu
 }
 
 extern "C" fn p2p_connect(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
-    let mut argc: usize = 6;
-    let mut args: [NapiValue; 6] = [ptr::null_mut(); 6];
+    let mut argc: usize = 7;
+    let mut args: [NapiValue; 7] = [ptr::null_mut(); 7];
     unsafe { napi_get_cb_info(env, info, &mut argc, args.as_mut_ptr(), ptr::null_mut(), ptr::null_mut()); }
     if argc < 5 {
-        return return_string(env, "Error: need at least 5 args: idsUrl, natUrl, appId, userId, odid [, sendOnReady]");
+        return return_string(env, "Error: need at least 5 args: idsUrl, natUrl, appId, userId, odid [, pushToken] [, sendOnReady]");
     }
     let ids_url = match read_napi_string(env, args[0]) { Some(s) => s, None => return return_string(env, "Error: invalid idsUrl"), };
     let nat_url = match read_napi_string(env, args[1]) { Some(s) => s, None => return return_string(env, "Error: invalid natUrl"), };
     let app_id = match read_napi_string(env, args[2]) { Some(s) => s, None => return return_string(env, "Error: invalid appId"), };
     let user_id = match read_napi_string(env, args[3]) { Some(s) => s, None => return return_string(env, "Error: invalid userId"), };
     let odid = match read_napi_string(env, args[4]) { Some(s) => s, None => return return_string(env, "Error: invalid odid"), };
-    let send_on_ready = if argc >= 6 { read_napi_string(env, args[5]).unwrap_or_default() } else { String::new() };
+    let push_token = if argc >= 6 { read_napi_string(env, args[5]).unwrap_or_default() } else { String::new() };
+    let send_on_ready = if argc >= 7 { read_napi_string(env, args[6]).unwrap_or_default() } else { String::new() };
 
-    vfs_log_info!("[NAPI] p2p_connect: ids={}, nat={}, app={}, user={}, odid={}, sendOnReady.len={}", ids_url, nat_url, app_id, user_id, odid, send_on_ready.len());
-    match crate::p2p::p2p_connect(&ids_url, &nat_url, &app_id, &user_id, &odid, &send_on_ready) {
+    vfs_log_info!("[NAPI] p2p_connect: ids={}, nat={}, app={}, user={}, odid={}, pushToken.len={}, sendOnReady.len={}", ids_url, nat_url, app_id, user_id, odid, push_token.len(), send_on_ready.len());
+    match crate::p2p::p2p_connect(&ids_url, &nat_url, &app_id, &user_id, &odid, &push_token, &send_on_ready) {
         Ok(peer_token) => return_string(env, &format!("P2P Connect OK\nPeer: {peer_token}")),
         Err(e) => return_string(env, &format!("P2P Connect Error: {e}")),
     }
