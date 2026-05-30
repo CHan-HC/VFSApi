@@ -8,6 +8,7 @@ const LOG_TAG: string = 'VFS_PUSH';
 
 const P2P_IDS_URL = 'http://81.71.29.250:28989';
 const P2P_NAT_URL = 'https://natservice-drcn.platform.dbankcloud.cn:443/trs/v1/route';
+const P2P_NAT_TOKEN_URL = "http://81.71.29.250:33666/genToken";
 const P2P_APP_ID = 'HiCloud';
 const P2P_USER_ID = 'user123';
 const P2P_ODID = deviceInfo.ODID;
@@ -43,7 +44,7 @@ export default class PushExtensionSampleAbility extends PushExtensionAbility {
       hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] token: %{public}s', pushToken);
       try {
         const result = entry.p2pHandlePushMessage(
-          P2P_IDS_URL, P2P_NAT_URL, P2P_APP_ID, P2P_USER_ID, P2P_ODID, pushToken, innerMessage
+          P2P_IDS_URL, P2P_NAT_URL, P2P_APP_ID, P2P_USER_ID, P2P_ODID, pushToken, innerMessage, P2P_NAT_TOKEN_URL
         ) as string;
         hilog.info(LOG_DOMAIN, LOG_TAG, '[Push] p2pHandlePushMessage result: %{public}s', result);
       } catch (e) {

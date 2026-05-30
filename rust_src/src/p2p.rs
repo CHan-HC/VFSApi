@@ -87,6 +87,7 @@ pub fn p2p_handle_push_message(
     odid: &str,
     push_token: &str,
     payload: &str,
+    nat_token_url: &str,
 ) -> String {
     vfs_log_info!("[P2P] p2p_handle_push_message: payload_len={}", payload.len());
 
@@ -103,7 +104,7 @@ pub fn p2p_handle_push_message(
         }
     } else {
         vfs_log_info!("[P2P] not connected, establishing P2P connection with auto-send");
-        match p2p_connect(ids_url, nat_url, app_id, user_id, odid, push_token, &result) {
+        match p2p_connect(ids_url, nat_url, app_id, user_id, odid, push_token, nat_token_url, &result) {
             Ok(peer) => vfs_log_info!("[P2P] connect initiated, peer={}, will auto-send when ICE ready", peer),
             Err(e) => vfs_log_error!("[P2P] connect failed: {}", e),
         }
@@ -128,9 +129,10 @@ pub fn p2p_connect(
     user_id: &str,
     odid: &str,
     push_token: &str,
+    nat_token_url: &str,
     send_on_ready: &str,
 ) -> Result<String, String> {
-    vfs_log_info!("[P2P] p2p_connect start: app_id={}, user_id={}, push_token={}", app_id, user_id, push_token);
+    vfs_log_info!("[P2P] p2p_connect start: app_id={}, user_id={}, push_token={}, nat_token_url={}", app_id, user_id, push_token, nat_token_url);
 
     let client = get_client();
     let mut guard = client.lock().map_err(|e| format!("lock: {e}"))?;
@@ -138,7 +140,7 @@ pub fn p2p_connect(
     guard.init(Config {
         ids_url: ids_url.to_string(),
         nat_url: nat_url.to_string(),
-        nat_token_url: String::new(),
+        nat_token_url: nat_token_url.to_string(),
     });
 
     // Register on_data callback → process messages like handlePushMessage and reply via P2P.

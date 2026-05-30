@@ -496,11 +496,11 @@ extern "C" fn p2p_register_ids(env: NapiEnv, info: NapiCallbackInfo) -> NapiValu
 }
 
 extern "C" fn p2p_connect(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
-    let mut argc: usize = 7;
-    let mut args: [NapiValue; 7] = [ptr::null_mut(); 7];
+    let mut argc: usize = 8;
+    let mut args: [NapiValue; 8] = [ptr::null_mut(); 8];
     unsafe { napi_get_cb_info(env, info, &mut argc, args.as_mut_ptr(), ptr::null_mut(), ptr::null_mut()); }
     if argc < 5 {
-        return return_string(env, "Error: need at least 5 args: idsUrl, natUrl, appId, userId, odid [, pushToken] [, sendOnReady]");
+        return return_string(env, "Error: need at least 5 args: idsUrl, natUrl, appId, userId, odid [, pushToken] [, natTokenUrl] [, sendOnReady]");
     }
     let ids_url = match read_napi_string(env, args[0]) { Some(s) => s, None => return return_string(env, "Error: invalid idsUrl"), };
     let nat_url = match read_napi_string(env, args[1]) { Some(s) => s, None => return return_string(env, "Error: invalid natUrl"), };
@@ -508,10 +508,11 @@ extern "C" fn p2p_connect(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
     let user_id = match read_napi_string(env, args[3]) { Some(s) => s, None => return return_string(env, "Error: invalid userId"), };
     let odid = match read_napi_string(env, args[4]) { Some(s) => s, None => return return_string(env, "Error: invalid odid"), };
     let push_token = if argc >= 6 { read_napi_string(env, args[5]).unwrap_or_default() } else { String::new() };
-    let send_on_ready = if argc >= 7 { read_napi_string(env, args[6]).unwrap_or_default() } else { String::new() };
+    let nat_token_url = if argc >= 7 { read_napi_string(env, args[6]).unwrap_or_default() } else { String::new() };
+    let send_on_ready = if argc >= 8 { read_napi_string(env, args[7]).unwrap_or_default() } else { String::new() };
 
-    vfs_log_info!("[NAPI] p2p_connect: ids={}, nat={}, app={}, user={}, odid={}, pushToken.len={}, sendOnReady.len={}", ids_url, nat_url, app_id, user_id, odid, push_token.len(), send_on_ready.len());
-    match crate::p2p::p2p_connect(&ids_url, &nat_url, &app_id, &user_id, &odid, &push_token, &send_on_ready) {
+    vfs_log_info!("[NAPI] p2p_connect: ids={}, nat={}, app={}, user={}, odid={}, pushToken.len={}, natTokenUrl.len={}, sendOnReady.len={}", ids_url, nat_url, app_id, user_id, odid, push_token.len(), nat_token_url.len(), send_on_ready.len());
+    match crate::p2p::p2p_connect(&ids_url, &nat_url, &app_id, &user_id, &odid, &push_token, &nat_token_url, &send_on_ready) {
         Ok(peer_token) => return_string(env, &format!("P2P Connect OK\nPeer: {peer_token}")),
         Err(e) => return_string(env, &format!("P2P Connect Error: {e}")),
     }
@@ -572,11 +573,11 @@ extern "C" fn handle_push_message(env: NapiEnv, info: NapiCallbackInfo) -> NapiV
 }
 
 extern "C" fn p2p_handle_push_msg(env: NapiEnv, info: NapiCallbackInfo) -> NapiValue {
-    let mut argc: usize = 7;
-    let mut args: [NapiValue; 7] = [ptr::null_mut(); 7];
+    let mut argc: usize = 8;
+    let mut args: [NapiValue; 8] = [ptr::null_mut(); 8];
     unsafe { napi_get_cb_info(env, info, &mut argc, args.as_mut_ptr(), ptr::null_mut(), ptr::null_mut()); }
     if argc < 7 {
-        return return_string(env, "Error: need 7 args: idsUrl, natUrl, appId, userId, odid, pushToken, payload");
+        return return_string(env, "Error: need at least 7 args: idsUrl, natUrl, appId, userId, odid, pushToken, payload [, natTokenUrl]");
     }
     let ids_url = match read_napi_string(env, args[0]) { Some(s) => s, None => return return_string(env, "Error: invalid idsUrl"), };
     let nat_url = match read_napi_string(env, args[1]) { Some(s) => s, None => return return_string(env, "Error: invalid natUrl"), };
@@ -585,9 +586,10 @@ extern "C" fn p2p_handle_push_msg(env: NapiEnv, info: NapiCallbackInfo) -> NapiV
     let odid = match read_napi_string(env, args[4]) { Some(s) => s, None => return return_string(env, "Error: invalid odid"), };
     let push_token = match read_napi_string(env, args[5]) { Some(s) => s, None => return return_string(env, "Error: invalid pushToken"), };
     let payload = match read_napi_string(env, args[6]) { Some(s) => s, None => return return_string(env, "Error: invalid payload"), };
+    let nat_token_url = if argc >= 8 { read_napi_string(env, args[7]).unwrap_or_default() } else { String::new() };
 
-    vfs_log_info!("[NAPI] p2pHandlePushMessage: ids={}, app={}, user={}, pushToken.len={}, payload.len={}", ids_url, app_id, user_id, push_token.len(), payload.len());
-    let result = crate::p2p::p2p_handle_push_message(&ids_url, &nat_url, &app_id, &user_id, &odid, &push_token, &payload);
+    vfs_log_info!("[NAPI] p2pHandlePushMessage: ids={}, app={}, user={}, pushToken.len={}, payload.len={}, natTokenUrl.len={}", ids_url, app_id, user_id, push_token.len(), payload.len(), nat_token_url.len());
+    let result = crate::p2p::p2p_handle_push_message(&ids_url, &nat_url, &app_id, &user_id, &odid, &push_token, &payload, &nat_token_url);
     return_string(env, &result)
 }
 
